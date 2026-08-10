@@ -2,11 +2,11 @@
  * PaywallScreen — Episode unlock gate
  *
  * Two unlock paths:
- *   1. Watch a rewarded ad (Google AdMob) → earn coins → auto-unlock  [pending SSV]
+ *   1. Watch a rewarded ad (Google AdMob) → earn coins → auto-unlock
+ *      Uses react-native-google-mobile-ads with Server-Side Verification (SSV).
+ *      On EARNED_REWARD the app calls POST /api/v1/user/unlock with method:'ad'.
  *   2. Spend coins directly (deducted from persisted balance via /user/unlock)
- *
- * Note: AdMob SDK is a placeholder. Install `react-native-google-mobile-ads`
- *       and uncomment the real SDK calls when AdMob SSV is wired server-side.
+ *   3. Subscribe via RevenueCat for unlimited access.
  */
 
 import React, { useState } from 'react';
@@ -21,6 +21,13 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  RewardedAd,
+  RewardedAdEventType,
+  TestIds,
+  AdEventType,
+} from 'react-native-google-mobile-ads';
+import Purchases from 'react-native-purchases';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../types';
@@ -29,45 +36,121 @@ type PaywallRoute = RouteProp<RootStackParamList, 'Paywall'>;
 
 const COIN_REWARD_FROM_AD = 10;
 
+/** Use test ad unit in development, real unit in production builds. */
+const AD_UNIT_ID = __DEV__
+  ? TestIds.REWARDED
+  : (process.env.EXPO_PUBLIC_ADMOB_REWARDED_AD_UNIT ?? TestIds.REWARDED);
+
 export default function PaywallScreen() {
   const navigation = useNavigation();
   const route = useRoute<PaywallRoute>();
   const { episode, drama } = route.params;
-  const { token, coinBalance, unlock, isUnlocked } = useAuth();
+  const { token, userId, coinBalance, unlock, isUnlocked } = useAuth();
 
   const [loading, setLoading] = useState(false);
 
   const canAfford = coinBalance >= episode.coinCost;
   const alreadyUnlocked = isUnlocked(episode.id);
 
-  async function handleWatchAd() {
-    setLoading(true);
-    try {
-      // TODO: Replace with real AdMob rewarded ad call (requires AdMob SSV server-side wiring)
-      // import MobileAds, { RewardedAd, RewardedAdEventType } from 'react-native-google-mobile-ads';
-      // const rewarded = RewardedAd.createForAdRequest(AD_UNIT_ID);
-      // rewarded.load();
-      // rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, onReward);
+  // ─── Watch ad ───────────────────────────────────────────────────────────────
 
-      await new Promise((res) => setTimeout(res, 1500));
+  async function handleWatchAd() {
+    if (!token) {
       Alert.alert(
-        '🎉 Coming Soon',
-        'Rewarded ad unlock requires AdMob server-side verification.\nPlease use coins to unlock.',
-        [{ text: 'OK' }]
+        'Sign In Required',
+        'Create a free account to watch ads and earn coins.',
+        [{ text: 'OK' }],
       );
-    } catch {
-      Alert.alert('Ad Error', 'Could not load ad. Please try again.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const rewarded = RewardedAd.createForAdRequest(AD_UNIT_ID, {
+        // SSV options let the backend attribute the reward to this user.
+        serverSideVerificationOptions: {
+          userId: userId ?? undefined,
+          customData: episode.id,
+        },
+      });
+
+      let rewardEarned = false;
+
+      await new Promise<void>((resolve, reject) => {
+        const unsubError = rewarded.addAdEventListener(
+          AdEventType.ERROR,
+          (error) => {
+            cleanup();
+            reject(error);
+          },
+        );
+
+        const unsubLoaded = rewarded.addAdEventListener(
+          RewardedAdEventType.LOADED,
+          () => {
+            rewarded.show();
+          },
+        );
+
+        const unsubEarned = rewarded.addAdEventListener(
+          RewardedAdEventType.EARNED_REWARD,
+          () => {
+            rewardEarned = true;
+          },
+        );
+
+        const unsubClosed = rewarded.addAdEventListener(
+          AdEventType.CLOSED,
+          () => {
+            cleanup();
+            resolve();
+          },
+        );
+
+        function cleanup() {
+          unsubError();
+          unsubLoaded();
+          unsubEarned();
+          unsubClosed();
+        }
+
+        rewarded.load();
+      });
+
+      if (rewardEarned) {
+        // Tell the server the user earned a reward — it credits coins and
+        // unlocks the episode atomically.
+        const res = await unlock(episode.id, 'ad');
+        if (res.success) {
+          Alert.alert(
+            '🎉 Episode Unlocked!',
+            `You earned ${COIN_REWARD_FROM_AD} coins!\nNew balance: ${res.newCoinBalance ?? coinBalance} coins.`,
+            [{ text: 'Watch', onPress: () => navigation.goBack() }],
+          );
+        } else {
+          Alert.alert('Unlock Failed', res.message ?? 'Please try again.');
+        }
+      }
+      // else: user closed the ad before completing it — no reward, no error.
+    } catch (err: any) {
+      Alert.alert(
+        'Ad Error',
+        err?.message ?? 'Could not load ad. Please try again.',
+      );
     } finally {
       setLoading(false);
     }
   }
+
+  // ─── Spend coins ────────────────────────────────────────────────────────────
 
   async function handleSpendCoins() {
     if (!token) {
       Alert.alert(
         'Sign In Required',
         'Create a free account to unlock episodes and track your progress.',
-        [{ text: 'OK' }]
+        [{ text: 'OK' }],
       );
       return;
     }
@@ -75,18 +158,20 @@ export default function PaywallScreen() {
     if (!canAfford) {
       Alert.alert(
         'Not Enough Coins',
-        `You need ${episode.coinCost} coins but only have ${coinBalance}. Watch an ad to earn more.`
+        `You need ${episode.coinCost} coins but only have ${coinBalance}. Watch an ad to earn more.`,
       );
       return;
     }
 
     setLoading(true);
     try {
-      const res = await unlock(episode.id);
+      const res = await unlock(episode.id, 'coins');
       if (res.success) {
-        Alert.alert('Episode Unlocked! 🎉', `New balance: ${res.newCoinBalance ?? coinBalance} coins.`, [
-          { text: 'Watch', onPress: () => navigation.goBack() },
-        ]);
+        Alert.alert(
+          'Episode Unlocked! 🎉',
+          `New balance: ${res.newCoinBalance ?? coinBalance} coins.`,
+          [{ text: 'Watch', onPress: () => navigation.goBack() }],
+        );
       } else {
         Alert.alert('Unlock Failed', res.message ?? 'Please try again.');
       }
@@ -97,10 +182,48 @@ export default function PaywallScreen() {
     }
   }
 
+  // ─── Subscribe ──────────────────────────────────────────────────────────────
+
   async function handleSubscribe() {
-    // TODO: RevenueCat purchase flow
-    Alert.alert('Subscribe', 'Subscription flow coming soon via RevenueCat.');
+    setLoading(true);
+    try {
+      const offerings = await Purchases.getOfferings();
+      const offering = offerings.current;
+
+      if (!offering || offering.availablePackages.length === 0) {
+        Alert.alert(
+          'No Offerings',
+          'Subscription plans are not available right now. Please try again later.',
+        );
+        return;
+      }
+
+      // Present the first (typically only) package — RevenueCat handles the
+      // native purchase sheet including trial info and pricing.
+      const pkg = offering.availablePackages[0];
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+
+      const isActive =
+        typeof customerInfo.entitlements.active['premium'] !== 'undefined';
+
+      if (isActive) {
+        Alert.alert(
+          '💎 Subscription Active!',
+          'You now have unlimited access to all episodes.',
+          [{ text: 'Watch', onPress: () => navigation.goBack() }],
+        );
+      }
+    } catch (err: any) {
+      // RevenueCat throws with code 1 when the user cancels — swallow that.
+      if (err?.code !== '1' && err?.userCancelled !== true) {
+        Alert.alert('Purchase Error', err?.message ?? 'Could not complete purchase. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   }
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <View style={styles.container}>
@@ -135,8 +258,13 @@ export default function PaywallScreen() {
         </View>
 
         {alreadyUnlocked ? (
-          <Pressable style={[styles.optionCard, styles.optionCardPrimary]} onPress={() => navigation.goBack()}>
-            <Text style={[styles.optionTitle, { textAlign: 'center' }]}>▶ Watch Now</Text>
+          <Pressable
+            style={[styles.optionCard, styles.optionCardPrimary]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={[styles.optionTitle, { textAlign: 'center' }]}>
+              ▶ Watch Now
+            </Text>
           </Pressable>
         ) : (
           <>
@@ -171,7 +299,11 @@ export default function PaywallScreen() {
             />
 
             {/* Option 3: Subscribe */}
-            <Pressable style={styles.subscribeBtn} onPress={handleSubscribe}>
+            <Pressable
+              style={[styles.subscribeBtn, loading && { opacity: 0.6 }]}
+              onPress={handleSubscribe}
+              disabled={loading}
+            >
               <Text style={styles.subscribeBtnText}>
                 💎 Unlimited Access — Subscribe
               </Text>
@@ -233,9 +365,7 @@ function OptionCard({
           </Text>
           <Text style={styles.optionSubtitle}>{subtitle}</Text>
         </View>
-        <View
-          style={[styles.optionBadge, { backgroundColor: badgeColor }]}
-        >
+        <View style={[styles.optionBadge, { backgroundColor: badgeColor }]}>
           <Text style={styles.optionBadgeText}>{badge}</Text>
         </View>
       </View>

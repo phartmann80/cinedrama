@@ -30,7 +30,8 @@ interface AuthContextValue extends AuthState {
   register: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  unlock: (episodeId: string) => Promise<UnlockResponse>;
+  /** Unlock an episode. Pass method:'ad' when the user earned a rewarded ad. */
+  unlock: (episodeId: string, method?: 'coins' | 'ad') => Promise<UnlockResponse>;
   isUnlocked: (episodeId: string) => boolean;
   /** Return the signed video URL for an episode if the user has unlocked it. */
   getUnlockedUrl: (episodeId: string) => string | null;
@@ -131,11 +132,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.token]);
 
-  async function unlock(episodeId: string): Promise<UnlockResponse> {
+  async function unlock(episodeId: string, method: 'coins' | 'ad' = 'coins'): Promise<UnlockResponse> {
     if (!state.token) {
       throw new Error('You must be signed in to unlock episodes.');
     }
-    const res = await unlockEpisode({ episodeId, method: 'coins' }, state.token);
+    const res = await unlockEpisode({ episodeId, method }, state.token);
     if (res.success) {
       setState((s) => ({
         ...s,

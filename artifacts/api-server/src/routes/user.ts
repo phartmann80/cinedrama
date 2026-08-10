@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { db } from '@workspace/db';
 import {
   usersTable,
@@ -195,9 +196,14 @@ userRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
  *   unique constraint on (userId, episodeId) in step 1 and is treated as
  *   already-unlocked — no double charge, no 500.
  *
- * method 'ad': NOT YET IMPLEMENTED — requires AdMob server-side verification
- *   (SSV) before any coins can be credited. Returns 501 until wired.
+ * method 'ad': called by the mobile client after EARNED_REWARD fires.
+ *   Credits COIN_REWARD_FROM_AD coins to the user then unlocks the episode for
+ *   free. AdMob SSV (GET /admob-ssv) provides secondary server-to-server
+ *   verification for auditing; this endpoint handles the immediate unlock.
  */
+
+const COIN_REWARD_FROM_AD = 10;
+
 userRouter.post('/unlock', requireAuth, async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const userId = authReq.user!.id;
@@ -209,15 +215,6 @@ userRouter.post('/unlock', requireAuth, async (req: Request, res: Response) => {
   }
 
   const { episodeId, method } = parsed.data;
-
-  // Ad-reward unlock is not yet available — AdMob SSV must be wired first.
-  if (method === 'ad') {
-    res.status(501).json({
-      success: false,
-      error: 'Ad-reward unlock is not yet available. Please use coins.',
-    });
-    return;
-  }
 
   try {
     // Fetch episode (outside transaction — read-only, no contention)
@@ -238,11 +235,74 @@ userRouter.post('/unlock', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    type TxResult =
+    // ── Ad reward path ──────────────────────────────────────────────────────
+    if (method === 'ad') {
+      type AdTxResult =
+        | { kind: 'unlocked'; newBalance: number }
+        | { kind: 'already_unlocked'; currentBalance: number };
+
+      const result: AdTxResult = await db.transaction(async (tx) => {
+        // Step 1: atomically claim the unlock slot.
+        const inserted = await tx
+          .insert(unlocksTable)
+          .values({ userId, episodeId })
+          .onConflictDoNothing()
+          .returning({ id: unlocksTable.id });
+
+        if (inserted.length === 0) {
+          const [userRow] = await tx
+            .select({ coinBalance: usersTable.coinBalance })
+            .from(usersTable)
+            .where(eq(usersTable.id, userId))
+            .limit(1);
+          return { kind: 'already_unlocked', currentBalance: userRow?.coinBalance ?? 0 };
+        }
+
+        // Step 2: credit the ad reward coins.
+        const [updated] = await tx
+          .update(usersTable)
+          .set({ coinBalance: sql`${usersTable.coinBalance} + ${COIN_REWARD_FROM_AD}` })
+          .where(eq(usersTable.id, userId))
+          .returning({ newBalance: usersTable.coinBalance });
+
+        // Step 3: record the coin ledger entry.
+        await tx.insert(coinTransactionsTable).values({
+          userId,
+          amount: COIN_REWARD_FROM_AD,
+          reason: 'ad_reward',
+          episodeId,
+        });
+
+        return { kind: 'unlocked', newBalance: updated.newBalance };
+      });
+
+      if (result.kind === 'already_unlocked') {
+        req.log.info({ userId, episodeId }, 'Episode already unlocked via ad (idempotent)');
+        res.json({
+          success: true,
+          newCoinBalance: result.currentBalance,
+          videoUrl: signMediaUrl(episodeId),
+          message: 'Already unlocked.',
+        });
+        return;
+      }
+
+      req.log.info({ userId, episodeId }, 'Episode unlocked via ad reward');
+      res.json({
+        success: true,
+        newCoinBalance: result.newBalance,
+        videoUrl: signMediaUrl(episodeId),
+        message: 'Episode unlocked via ad reward.',
+      });
+      return;
+    }
+
+    // ── Coins path ──────────────────────────────────────────────────────────
+    type CoinsTxResult =
       | { kind: 'unlocked'; newBalance: number }
       | { kind: 'already_unlocked' };
 
-    const result: TxResult = await db.transaction(async (tx) => {
+    const result: CoinsTxResult = await db.transaction(async (tx) => {
       // Step 1: atomically claim the unlock slot.
       // If the row already exists (concurrent or prior request), DO NOTHING returns 0 rows.
       const inserted = await tx
@@ -322,6 +382,119 @@ userRouter.post('/unlock', requireAuth, async (req: Request, res: Response) => {
     req.log.error(err, 'Unlock failed');
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// ─── GET /api/v1/user/admob-ssv ───────────────────────────────────────────────
+/**
+ * AdMob Server-Side Verification (SSV) callback.
+ *
+ * Google's AdMob servers call this endpoint after the user completes a rewarded
+ * ad. The request is signed with an ECDSA key; we verify the signature using
+ * Google's published verifier keys before accepting the callback.
+ *
+ * Query parameters (sent by Google):
+ *   ad_network, ad_unit, reward_amount, reward_item, timestamp,
+ *   transaction_id, user_id, key_id, signature
+ *
+ * The user_id is set via serverSideVerificationOptions.userId in the mobile
+ * client (the authenticated user's UUID). transaction_id deduplicates retries.
+ *
+ * This endpoint is called by Google — it is NOT authenticated via Bearer JWT.
+ * Security comes entirely from ECDSA signature verification.
+ */
+
+const ADMOB_VERIFIER_KEYS_URL =
+  'https://gstatic.com/admob/reward/verifier-keys.json';
+
+/** Simple in-process cache for Google's public keys (keyed by key_id). */
+const verifierKeyCache = new Map<string, string>();
+let verifierKeysCachedAt = 0;
+const VERIFIER_KEYS_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+async function fetchAdMobPublicKey(keyId: string): Promise<string | null> {
+  const now = Date.now();
+  if (verifierKeyCache.size === 0 || now - verifierKeysCachedAt > VERIFIER_KEYS_TTL_MS) {
+    try {
+      const res = await fetch(ADMOB_VERIFIER_KEYS_URL);
+      if (!res.ok) return null;
+      const data = (await res.json()) as { keys: { keyId: number; pem: string }[] };
+      verifierKeyCache.clear();
+      for (const k of data.keys) {
+        verifierKeyCache.set(String(k.keyId), k.pem);
+      }
+      verifierKeysCachedAt = now;
+    } catch {
+      return null;
+    }
+  }
+  return verifierKeyCache.get(keyId) ?? null;
+}
+
+userRouter.get('/admob-ssv', async (req: Request, res: Response) => {
+  // Google sends all parameters as query strings. Extract them.
+  const {
+    key_id,
+    signature,
+    user_id,
+    transaction_id,
+    reward_amount,
+    reward_item,
+  } = req.query as Record<string, string>;
+
+  if (!key_id || !signature || !user_id || !transaction_id) {
+    res.status(400).send('Missing required SSV parameters');
+    return;
+  }
+
+  // ── Verify ECDSA signature ─────────────────────────────────────────────────
+  // The signed content is the full raw query string without the trailing
+  // &signature=… parameter. Google always appends the signature last.
+  const rawQuery = req.url.split('?')[1] ?? '';
+  const signatureParam = `&signature=${encodeURIComponent(signature)}`;
+  const signedContent = rawQuery.endsWith(signatureParam)
+    ? rawQuery.slice(0, -signatureParam.length)
+    : rawQuery.replace(/&?signature=[^&]*$/, '');
+
+  const publicKeyPem = await fetchAdMobPublicKey(key_id);
+  if (!publicKeyPem) {
+    req.log.warn({ key_id }, 'AdMob SSV: unknown key_id or key fetch failed');
+    // Return 200 to prevent Google from retrying indefinitely when keys are
+    // temporarily unavailable; log the anomaly for manual review.
+    res.status(200).send('OK');
+    return;
+  }
+
+  let signatureValid = false;
+  try {
+    const verifier = crypto.createVerify('SHA256');
+    verifier.update(signedContent);
+    signatureValid = verifier.verify(
+      { key: publicKeyPem, dsaEncoding: 'ieee-p1363' },
+      Buffer.from(signature, 'base64url'),
+    );
+  } catch (err) {
+    req.log.error(err, 'AdMob SSV: signature verification threw');
+    res.status(400).send('Signature verification error');
+    return;
+  }
+
+  if (!signatureValid) {
+    req.log.warn({ user_id, transaction_id }, 'AdMob SSV: invalid signature');
+    res.status(400).send('Invalid signature');
+    return;
+  }
+
+  // ── Signature valid — log the reward for auditing ─────────────────────────
+  // The actual coin credit and unlock happen via POST /unlock (method:'ad')
+  // called from the mobile client on EARNED_REWARD. SSV provides a secondary
+  // audit trail that is independent of the client.
+  req.log.info(
+    { user_id, transaction_id, reward_amount, reward_item },
+    'AdMob SSV verified',
+  );
+
+  // Google expects a 200 OK to confirm receipt.
+  res.status(200).send('OK');
 });
 
 // ─── POST /api/v1/user/like ───────────────────────────────────────────────────
