@@ -1,0 +1,31 @@
+RE: CineDrama scaffold — status NOT ACCEPTED yet. Push to GitHub required before any review.
+
+Good progress on scope coverage, but I checked github.com/phartmann80/cinedrama and the repository is empty. Nothing you listed exists outside your workspace, so I can't verify or approve any of it. Our acceptance rule from here on: work only counts when it's pushed to GitHub. Self-reported "✅ live" in your sandbox does not pass review.
+
+Do the following now, in this order:
+
+1. Push everything to GitHub (blocking, today)
+
+Push the full scaffold to branch patch-001-scaffold in phartmann80/cinedrama. Do not push to main — open a PR against main and post the PR link. I review on GitHub, then approve the merge.
+Required repo layout (mirror the blueprint, not your sandbox):
+/web        → Next.js landing page (Vercel root will point here)
+/mobile     → React Native (Expo) app
+/backend    → API server (Express + Zod)
+README.md
+Move the API out of /artifacts/api-server into /backend. It must be a standalone, self-contained Node/Express project (own package.json, npm install && npm run dev works anywhere) because it deploys to our own Linux VPS — it cannot depend on your workspace runtime, Replit config, or shared sandbox server.
+Remove/exclude replit.md and any sandbox-specific files from the repo. Add a proper .gitignore (node_modules, .env, .expo, .next).
+2. Include in the PR description
+
+Exact file tree of what's in each of /web, /mobile, /backend
+How to run each part locally (commands + Node version)
+Env vars used (NEXT_PUBLIC_APK_URL, and any backend vars) — names only, never values
+Known stubs/TODOs (AdMob, RevenueCat, DB mocks)
+3. Answer these before we proceed to follow-up tasks
+
+Confirm the Expo build profile produces a standalone installable .apk for direct distribution (not an Expo Go dev build), and state the Expo SDK / RN versions used.
+Confirm /privacy and /terms contain real, complete policy text with support@cinedrama.app referenced.
+Confirm the three API routes are Zod-validated with mock data clearly marked, and that CORS is configured so the mobile app can call the backend.
+4. Hold on the proposed follow-up tasks. Database, AdMob/RevenueCat wiring, and Vercel deployment are approved in principle as the next three tasks — in that order — but nothing starts until the scaffold PR is on GitHub and passes my review. Vercel/domain connection specifically happens only after I've visually reviewed the landing page.
+
+Report back with the PR link. That's the review gate.
+
