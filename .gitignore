@@ -26,9 +26,6 @@ web-build/
 replit.md
 .replit
 .replit-artifact/
-/artifacts/
-/lib/
-/scripts/
 pnpm-workspace.yaml
 pnpm-lock.yaml
 tsconfig.base.json
