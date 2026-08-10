@@ -124,15 +124,16 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
   });
   const heartOpacity = heartAnim;
 
-  const videoSource = episode.isLocked
-    ? { uri: episode.thumbnailUrl } // show thumbnail as placeholder
-    : { uri: episode.videoUrl };
+  // Show the thumbnail as a placeholder when: (a) episode is locked, or
+  // (b) unlocked but the signed URL hasn't arrived yet (re-fetch in progress).
+  const showVideoPlaceholder = episode.isLocked || !episode.videoUrl;
+  const videoSource = { uri: episode.videoUrl ?? episode.thumbnailUrl };
 
   return (
     <TouchableWithoutFeedback onPress={handleTap} accessible={false}>
       <View style={[styles.container, { height }]}>
         {/* Video / Locked Thumbnail */}
-        {episode.isLocked ? (
+        {showVideoPlaceholder ? (
           <View style={styles.lockedOverlay}>
             <Text style={styles.lockIcon}>🔒</Text>
             <Text style={styles.lockedTitle}>Episode {episode.episodeNumber} Locked</Text>
