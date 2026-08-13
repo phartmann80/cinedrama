@@ -17,7 +17,7 @@ export interface Episode {
   episodeNumber: number;
   title: string;
   durationSeconds: number;
-  videoUrl: string;        // HLS .m3u8 or direct .mp4
+  videoUrl: string | null; // HLS .m3u8 or direct .mp4; null for locked/unauthenticated
   thumbnailUrl: string;
   isLocked: boolean;       // requires coins or ad-watch
   coinCost: number;        // 0 if free

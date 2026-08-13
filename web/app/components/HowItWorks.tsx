@@ -9,7 +9,7 @@ const STEPS = [
     step: '02',
     title: 'Pick Your Genre',
     description:
-      'Billionaire Drama? Sci-Fi? Romance? Choose what hooks you — or let the algorithm feed you.',
+      'Billionaire Drama? Sci-Fi? Romance? Choose what hooks you, or let the algorithm feed you.',
   },
   {
     step: '03',

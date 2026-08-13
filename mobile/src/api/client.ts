@@ -27,12 +27,48 @@ async function request<T>(
 
 import type { Drama, Episode, UnlockRequest, UnlockResponse } from '../types';
 
+/** Returns the first page of dramas (up to 50). */
 export async function fetchDramas(): Promise<Drama[]> {
-  return request<Drama[]>('/api/v1/dramas');
+  const res = await request<{ data: Drama[]; meta: unknown }>('/api/v1/dramas?limit=50');
+  return res.data;
 }
 
-export async function fetchEpisodes(dramaId: string): Promise<Episode[]> {
-  return request<Episode[]>(`/api/v1/dramas/${dramaId}/episodes`);
+/** Fetch episodes for a drama. Pass the auth token to receive unlock-overlaid URLs. */
+export async function fetchEpisodes(dramaId: string, token?: string): Promise<Episode[]> {
+  return request<Episode[]>(`/api/v1/dramas/${dramaId}/episodes`, undefined, token);
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export interface AuthResponse {
+  token: string;
+  user: { id: string; email: string; coinBalance: number };
+}
+
+export async function registerUser(email: string, password: string): Promise<AuthResponse> {
+  return request<AuthResponse>('/api/v1/user/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function loginUser(email: string, password: string): Promise<AuthResponse> {
+  return request<AuthResponse>('/api/v1/user/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export interface MeResponse {
+  id: string;
+  email: string;
+  coinBalance: number;
+  unlockedEpisodeIds: string[];
+  likedEpisodeIds: string[];
+}
+
+export async function fetchMe(token: string): Promise<MeResponse> {
+  return request<MeResponse>('/api/v1/user/me', undefined, token);
 }
 
 // ─── User / Unlock ────────────────────────────────────────────────────────────

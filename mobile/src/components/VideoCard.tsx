@@ -1,5 +1,5 @@
 /**
- * VideoCard — Full-screen episode player card
+ * VideoCard - Full-screen episode player card
  *
  * Features:
  *  - Auto-play when isActive, pause otherwise
@@ -23,6 +23,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Heart, Lock, Share2, Key, Pause } from 'lucide-react-native';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import type { Episode, Drama, RootStackParamList } from '../types';
 
@@ -50,73 +51,42 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(Math.floor(Math.random() * 9000) + 100);
 
-  // Double-tap state
-  const lastTap = useRef<number | null>(null);
   const heartAnim = useRef(new Animated.Value(0)).current;
 
-  // Sync play/pause with active state
+  // Sync play state with active prop (when user swipes to this card)
   useEffect(() => {
-    if (!isActive) {
-      setPaused(true);
-    }
-    // Don't auto-resume if user manually paused
+    setPaused(!isActive);
   }, [isActive]);
 
-  // If episode is locked and user tries to watch, open paywall
+  // -- Double-tap to like --
+  const lastTap = useRef(0);
+  const handleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+      setLiked(true);
+      setLikeCount((c) => c + 1);
+      Animated.sequence([
+        Animated.timing(heartAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(heartAnim, {
+          toValue: 0,
+          duration: 400,
+          delay: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      setPaused((p) => !p);
+    }
+    lastTap.current = now;
+  }, [heartAnim]);
+
   const handleLockedEpisode = useCallback(() => {
     navigation.navigate('Paywall', { episode, drama });
   }, [navigation, episode, drama]);
-
-  const handleSingleTap = useCallback(() => {
-    if (episode.isLocked) {
-      handleLockedEpisode();
-      return;
-    }
-    setPaused((prev) => !prev);
-  }, [episode.isLocked, handleLockedEpisode]);
-
-  const animateHeart = useCallback(() => {
-    heartAnim.setValue(0);
-    Animated.sequence([
-      Animated.spring(heartAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        speed: 20,
-        bounciness: 12,
-      }),
-      Animated.delay(600),
-      Animated.timing(heartAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [heartAnim]);
-
-  const handleDoubleTap = useCallback(() => {
-    if (!liked) {
-      setLiked(true);
-      setLikeCount((c) => c + 1);
-    }
-    animateHeart();
-  }, [liked, animateHeart]);
-
-  const handleTap = useCallback(() => {
-    const now = Date.now();
-    if (lastTap.current && now - lastTap.current < DOUBLE_TAP_DELAY) {
-      lastTap.current = null;
-      handleDoubleTap();
-    } else {
-      lastTap.current = now;
-      setTimeout(() => {
-        // Only fire single tap if no second tap came
-        if (lastTap.current === now) {
-          lastTap.current = null;
-          handleSingleTap();
-        }
-      }, DOUBLE_TAP_DELAY);
-    }
-  }, [handleDoubleTap, handleSingleTap]);
 
   const heartScale = heartAnim.interpolate({
     inputRange: [0, 0.5, 1],
@@ -124,17 +94,18 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
   });
   const heartOpacity = heartAnim;
 
-  const videoSource = episode.isLocked
-    ? { uri: episode.thumbnailUrl } // show thumbnail as placeholder
-    : { uri: episode.videoUrl };
+  // Show the thumbnail as a placeholder when: (a) episode is locked, or
+  // (b) unlocked but the signed URL hasn't arrived yet (re-fetch in progress).
+  const showVideoPlaceholder = episode.isLocked || !episode.videoUrl;
+  const videoSource = { uri: episode.videoUrl ?? episode.thumbnailUrl };
 
   return (
     <TouchableWithoutFeedback onPress={handleTap} accessible={false}>
       <View style={[styles.container, { height }]}>
         {/* Video / Locked Thumbnail */}
-        {episode.isLocked ? (
+        {showVideoPlaceholder ? (
           <View style={styles.lockedOverlay}>
-            <Text style={styles.lockIcon}>🔒</Text>
+            <Lock size={48} strokeWidth={1.5} color={Colors.brand.text} />
             <Text style={styles.lockedTitle}>Episode {episode.episodeNumber} Locked</Text>
             <Text style={styles.lockedSub}>Watch an ad or spend {episode.coinCost} coins to unlock</Text>
             <Pressable style={styles.unlockBtn} onPress={handleLockedEpisode}>
@@ -165,7 +136,7 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
           <Text style={styles.genreTag}>{drama.genre}</Text>
           <Text style={styles.dramaTitle}>{drama.title}</Text>
           <Text style={styles.episodeLabel}>
-            Episode {episode.episodeNumber} · {formatDuration(episode.durationSeconds)}
+            Episode {episode.episodeNumber} - {formatDuration(episode.durationSeconds)}
           </Text>
           <Text style={styles.episodeTitle} numberOfLines={2}>
             {episode.title}
@@ -176,7 +147,14 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
         <View style={styles.actionBar} pointerEvents="box-none">
           {/* Like */}
           <ActionButton
-            emoji={liked ? '❤️' : '🤍'}
+            icon={
+              <Heart
+                size={28}
+                strokeWidth={1.75}
+                color={liked ? Colors.brand.red : Colors.brand.white}
+                fill={liked ? Colors.brand.red : 'none'}
+              />
+            }
             label={formatCount(likeCount)}
             onPress={() => {
               setLiked((l) => !l);
@@ -186,7 +164,7 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
 
           {/* Share */}
           <ActionButton
-            emoji="↗️"
+            icon={<Share2 size={28} strokeWidth={1.75} color={Colors.brand.white} />}
             label="Share"
             onPress={() => Alert.alert('Share', 'Share link copied!')}
           />
@@ -194,7 +172,7 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
           {/* Coin unlock */}
           {episode.isLocked && (
             <ActionButton
-              emoji="🪙"
+              icon={<Key size={28} strokeWidth={1.75} color={Colors.brand.white} />}
               label={`${episode.coinCost}`}
               onPress={handleLockedEpisode}
             />
@@ -202,7 +180,7 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
         </View>
 
         {/* Double-tap heart animation */}
-        <Animated.Text
+        <Animated.View
           style={[
             styles.heartBurst,
             {
@@ -212,13 +190,13 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
           ]}
           pointerEvents="none"
         >
-          ❤️
-        </Animated.Text>
+          <Heart size={80} strokeWidth={1.5} color={Colors.brand.red} fill={Colors.brand.red} />
+        </Animated.View>
 
         {/* Pause indicator */}
         {paused && !episode.isLocked && (
           <View style={styles.pauseIndicator} pointerEvents="none">
-            <Text style={styles.pauseIcon}>⏸</Text>
+            <Pause size={48} strokeWidth={1.5} color={Colors.brand.white} />
           </View>
         )}
       </View>
@@ -227,17 +205,17 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
 }
 
 function ActionButton({
-  emoji,
+  icon,
   label,
   onPress,
 }: {
-  emoji: string;
+  icon: React.ReactNode;
   label: string;
   onPress: () => void;
 }) {
   return (
     <Pressable onPress={onPress} style={styles.actionBtn}>
-      <Text style={styles.actionEmoji}>{emoji}</Text>
+      {icon}
       <Text style={styles.actionLabel}>{label}</Text>
     </Pressable>
   );
@@ -312,9 +290,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  actionEmoji: {
-    fontSize: 28,
-  },
   actionLabel: {
     color: Colors.brand.text,
     fontSize: Typography.sizes.xs,
@@ -325,16 +300,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     top: '40%',
-    fontSize: 80,
   },
   pauseIndicator: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  pauseIcon: {
-    fontSize: 48,
-    opacity: 0.6,
   },
   // Locked state
   lockedOverlay: {
@@ -344,16 +314,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: Spacing.xl,
   },
-  lockIcon: {
-    fontSize: 48,
-    marginBottom: Spacing.md,
-  },
   lockedTitle: {
     color: Colors.brand.text,
     fontSize: Typography.sizes['2xl'],
     fontWeight: Typography.weights.extrabold,
     marginBottom: Spacing.sm,
     textAlign: 'center',
+    marginTop: Spacing.md,
   },
   lockedSub: {
     color: Colors.brand.muted,

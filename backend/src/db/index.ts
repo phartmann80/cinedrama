@@ -1,0 +1,39 @@
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import pg from 'pg';
+import * as schema from './schema.js';
+
+const { Pool } = pg;
+
+type Database = NodePgDatabase<typeof schema>;
+
+let pool: pg.Pool | undefined;
+let dbInstance: Database | undefined;
+
+export function getDb(): Database {
+  if (!process.env.DATABASE_URL) {
+    // In production, USE_MOCK_DB has NO effect - must have DATABASE_URL
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('DATABASE_URL is required in production. USE_MOCK_DB has no effect.');
+    }
+    // In development/test, allow mock mode
+    if (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_DB === 'true') {
+      throw new Error('Mock mode requires DATABASE_URL to be unset. Use real DB or remove DATABASE_URL.');
+    }
+    throw new Error('DATABASE_URL must be set. Did you forget to provision a database?');
+  }
+  if (!dbInstance) {
+    pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    dbInstance = drizzle(pool, { schema });
+  }
+  return dbInstance;
+}
+
+export function getPool(): pg.Pool {
+  getDb();
+  if (!pool) {
+    throw new Error('DATABASE_URL must be set.');
+  }
+  return pool;
+}
+
+export * from './schema.js';

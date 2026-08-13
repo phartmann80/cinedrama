@@ -4,9 +4,16 @@
  * Architecture:
  *  - FlatList with pagingEnabled + snapToInterval = full screen height
  *  - Each page renders a <VideoCard> with the episode's video
- *  - Visible item tracked via onViewableItemsChanged → only the current
+ *  - Visible item tracked via onViewableItemsChanged -> only the current
  *    card plays, all others are paused (reduces memory + CPU)
  *  - Double-tap to like, tap to pause/resume
+ *
+ * Auth integration:
+ *  - JWT is passed to fetchEpisodes so the API returns unlock-overlaid URLs
+ *  - AuthContext.isUnlocked overlay applied client-side as a second pass so
+ *    episodes the user unlocked this session (before a re-fetch) also show
+ *    as playable immediately
+ *  - Feed reloads whenever the auth token changes (login / logout)
  */
 
 import React, {
@@ -28,6 +35,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/theme';
 import VideoCard from '../components/VideoCard';
 import { fetchDramas, fetchEpisodes } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import type { Episode, Drama } from '../types';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -39,6 +47,7 @@ interface FeedItem {
 
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
+  const { token, isUnlocked, getUnlockedUrl, unlocksVersion } = useAuth();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,19 +66,26 @@ export default function FeedScreen() {
     []
   );
 
+  // Reload the feed whenever:
+  //  - token changes (login / logout): ensures episodes reflect the new auth state
+  //  - unlocksVersion increments (unlock purchased): re-fetches the authenticated
+  //    episode list so VideoCard receives a real signed URL for the newly unlocked
+  //    episode rather than the null returned to unauthenticated callers.
   useEffect(() => {
     loadFeed();
-  }, []);
+  }, [token, unlocksVersion]);
 
   async function loadFeed() {
     try {
       setLoading(true);
+      setError(null);
       const dramas = await fetchDramas();
       const feedItems: FeedItem[] = [];
-      // Interleave episodes from multiple dramas
+      // Interleave episodes from multiple dramas; pass token so the API
+      // returns accurate isLocked + videoUrl for the authenticated user.
       const episodeBatches = await Promise.all(
         dramas.slice(0, 4).map((d) =>
-          fetchEpisodes(d.id).then((eps) =>
+          fetchEpisodes(d.id, token ?? undefined).then((eps) =>
             eps.map((ep) => ({ episode: ep, drama: d }))
           )
         )
@@ -90,15 +106,33 @@ export default function FeedScreen() {
   }
 
   const renderItem = useCallback(
-    ({ item, index }: { item: FeedItem; index: number }) => (
-      <VideoCard
-        episode={item.episode}
-        drama={item.drama}
-        isActive={index === activeIndex}
-        height={SCREEN_HEIGHT}
-      />
-    ),
-    [activeIndex]
+    ({ item, index }: { item: FeedItem; index: number }) => {
+      // Client-side overlay: reflect unlock state immediately without waiting
+      // for the re-fetch triggered by unlocksVersion to complete.
+      // Priority order for videoUrl:
+      //   1. Signed URL cached from the unlock API response (available immediately)
+      //   2. Signed URL already present in the episode item (fetched with auth token)
+      //   3. null — item was fetched unauthenticated; the re-fetch will replace it
+      const unlocked = isUnlocked(item.episode.id);
+      const unlockedUrl = getUnlockedUrl(item.episode.id);
+      const episode: Episode = unlocked
+        ? {
+            ...item.episode,
+            isLocked: false,
+            videoUrl: unlockedUrl ?? item.episode.videoUrl,
+          }
+        : item.episode;
+
+      return (
+        <VideoCard
+          episode={episode}
+          drama={item.drama}
+          isActive={index === activeIndex}
+          height={SCREEN_HEIGHT}
+        />
+      );
+    },
+    [activeIndex, isUnlocked, getUnlockedUrl, unlocksVersion]
   );
 
   const keyExtractor = useCallback(
@@ -110,7 +144,7 @@ export default function FeedScreen() {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={Colors.brand.red} />
-        <Text style={styles.loadingText}>Loading your feed…</Text>
+        <Text style={styles.loadingText}>Loading your feed...</Text>
       </View>
     );
   }

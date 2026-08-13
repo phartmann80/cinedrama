@@ -1,13 +1,12 @@
 /**
- * PaywallScreen — Episode unlock gate
+ * PaywallScreen - Episode unlock gate
  *
  * Two unlock paths:
- *   1. Watch a rewarded ad (Google AdMob) → earn coins → auto-unlock
- *   2. Spend coins directly (RevenueCat / coin balance)
- *
- * Note: AdMob and RevenueCat SDKs are referenced as placeholders below.
- *       Install `react-native-google-mobile-ads` and `react-native-purchases`
- *       then uncomment the real SDK calls.
+ *   1. Watch a rewarded ad (Google AdMob) -> earn coins -> auto-unlock
+ *      Uses react-native-google-mobile-ads with Server-Side Verification (SSV).
+ *      On EARNED_REWARD the app calls POST /api/v1/user/unlock with method:'ad'.
+ *   2. Spend coins directly (deducted from persisted balance via /user/unlock)
+ *   3. Subscribe via RevenueCat for unlimited access.
  */
 
 import React, { useState } from 'react';
@@ -19,79 +18,213 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Dimensions,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  RewardedAd,
+  RewardedAdEventType,
+  TestIds,
+  AdEventType,
+} from 'react-native-google-mobile-ads';
+import Purchases from 'react-native-purchases';
+import { Lock, LockOpen, CheckCircle, Key, X, Play } from 'lucide-react-native';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../types';
 
 type PaywallRoute = RouteProp<RootStackParamList, 'Paywall'>;
 
-const COIN_REWARD_FROM_AD = 10; // coins earned per rewarded ad
+const COIN_REWARD_FROM_AD = 10;
+
+/** Use test ad unit in development, real unit in production builds. */
+const AD_UNIT_ID = __DEV__
+  ? TestIds.REWARDED
+  : (process.env.EXPO_PUBLIC_ADMOB_REWARDED_AD_UNIT ?? TestIds.REWARDED);
 
 export default function PaywallScreen() {
   const navigation = useNavigation();
   const route = useRoute<PaywallRoute>();
   const { episode, drama } = route.params;
+  const { token, userId, coinBalance, unlock, isUnlocked } = useAuth();
 
   const [loading, setLoading] = useState(false);
-  const [userCoins] = useState(0); // TODO: pull from auth context
 
-  const canAfford = userCoins >= episode.coinCost;
+  const canAfford = coinBalance >= episode.coinCost;
+  const alreadyUnlocked = isUnlocked(episode.id);
+
+  // -- Watch ad --
 
   async function handleWatchAd() {
-    setLoading(true);
-    try {
-      // TODO: Replace with real AdMob rewarded ad call
-      // import MobileAds, { RewardedAd, RewardedAdEventType, TestIds } from 'react-native-google-mobile-ads';
-      // const rewarded = RewardedAd.createForAdRequest(AD_UNIT_ID);
-      // rewarded.load();
-      // rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, onReward);
-
-      // Simulate ad completion
-      await new Promise((res) => setTimeout(res, 1500));
+    if (!token) {
       Alert.alert(
-        '🎉 Coins Earned!',
-        `You earned ${COIN_REWARD_FROM_AD} coins for watching the ad. Episode unlocked!`,
-        [{ text: 'Watch Now', onPress: () => navigation.goBack() }]
-      );
-    } catch {
-      Alert.alert('Ad Error', 'Could not load ad. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSpendCoins() {
-    if (!canAfford) {
-      Alert.alert(
-        'Not Enough Coins',
-        `You need ${episode.coinCost} coins but only have ${userCoins}. Watch an ad to earn more.`
+        'Sign In Required',
+        'Create a free account to watch ads and earn coins.',
+        [{ text: 'OK' }],
       );
       return;
     }
+
     setLoading(true);
+
     try {
-      // TODO: call unlockEpisode({ episodeId: episode.id, method: 'coins' }, token)
-      await new Promise((res) => setTimeout(res, 800));
-      Alert.alert('Episode Unlocked!', 'Enjoy the episode.', [
-        { text: 'Watch', onPress: () => navigation.goBack() },
-      ]);
-    } catch {
-      Alert.alert('Error', 'Could not unlock episode. Try again.');
+      const rewarded = RewardedAd.createForAdRequest(AD_UNIT_ID, {
+        // SSV options let the backend attribute the reward to this user.
+        serverSideVerificationOptions: {
+          userId: userId ?? undefined,
+          customData: episode.id,
+        },
+      });
+
+      let rewardEarned = false;
+
+      await new Promise<void>((resolve, reject) => {
+        const unsubError = rewarded.addAdEventListener(
+          AdEventType.ERROR,
+          (error) => {
+            cleanup();
+            reject(error);
+          },
+        );
+
+        const unsubLoaded = rewarded.addAdEventListener(
+          RewardedAdEventType.LOADED,
+          () => {
+            rewarded.show();
+          },
+        );
+
+        const unsubEarned = rewarded.addAdEventListener(
+          RewardedAdEventType.EARNED_REWARD,
+          () => {
+            rewardEarned = true;
+          },
+        );
+
+        const unsubClosed = rewarded.addAdEventListener(
+          AdEventType.CLOSED,
+          () => {
+            cleanup();
+            resolve();
+          },
+        );
+
+        function cleanup() {
+          unsubError();
+          unsubLoaded();
+          unsubEarned();
+          unsubClosed();
+        }
+
+        rewarded.load();
+      });
+
+      if (rewardEarned) {
+        // Tell the server the user earned a reward - it credits coins and
+        // unlocks the episode atomically.
+        const res = await unlock(episode.id, 'ad');
+        if (res.success) {
+          Alert.alert(
+            'Episode Unlocked!',
+            `You earned ${COIN_REWARD_FROM_AD} coins!\nNew balance: ${res.newCoinBalance ?? coinBalance} coins.`,
+            [{ text: 'Watch', onPress: () => navigation.goBack() }],
+          );
+        } else {
+          Alert.alert('Unlock Failed', res.message ?? 'Please try again.');
+        }
+      }
+      // else: user closed the ad before completing it - no reward, no error.
+    } catch (err: any) {
+      Alert.alert(
+        'Ad Error',
+        err?.message ?? 'Could not load ad. Please try again.',
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleSubscribe() {
-    // TODO: RevenueCat purchase flow
-    // import Purchases from 'react-native-purchases';
-    // const offerings = await Purchases.getOfferings();
-    // await Purchases.purchasePackage(package);
-    Alert.alert('Subscribe', 'Subscription flow coming soon via RevenueCat.');
+  // -- Spend coins --
+
+  async function handleSpendCoins() {
+    if (!token) {
+      Alert.alert(
+        'Sign In Required',
+        'Create a free account to unlock episodes and track your progress.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
+    if (!canAfford) {
+      Alert.alert(
+        'Not Enough Coins',
+        `You need ${episode.coinCost} coins but only have ${coinBalance}. Watch an ad to earn more.`,
+      );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await unlock(episode.id, 'coins');
+      if (res.success) {
+        Alert.alert(
+          'Episode Unlocked!',
+          `New balance: ${res.newCoinBalance ?? coinBalance} coins.`,
+          [{ text: 'Watch', onPress: () => navigation.goBack() }],
+        );
+      } else {
+        Alert.alert('Unlock Failed', res.message ?? 'Please try again.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Could not unlock episode. Try again.');
+    } finally {
+      setLoading(false);
+    }
   }
+
+  // -- Subscribe --
+
+  async function handleSubscribe() {
+    setLoading(true);
+    try {
+      const offerings = await Purchases.getOfferings();
+      const offering = offerings.current;
+
+      if (!offering || offering.availablePackages.length === 0) {
+        Alert.alert(
+          'No Offerings',
+          'Subscription plans are not available right now. Please try again later.',
+        );
+        return;
+      }
+
+      // Present the first (typically only) package - RevenueCat handles the
+      // native purchase sheet including trial info and pricing.
+      const pkg = offering.availablePackages[0];
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+
+      const isActive =
+        typeof customerInfo.entitlements.active['premium'] !== 'undefined';
+
+      if (isActive) {
+        Alert.alert(
+          'Subscription Active!',
+          'You now have unlimited access to all episodes.',
+          [{ text: 'Watch', onPress: () => navigation.goBack() }],
+        );
+      }
+    } catch (err: any) {
+      // RevenueCat throws with code 1 when the user cancels - swallow that.
+      if (err?.code !== '1' && err?.userCancelled !== true) {
+        Alert.alert('Purchase Error', err?.message ?? 'Could not complete purchase. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // -- Render --
 
   return (
     <View style={styles.container}>
@@ -102,7 +235,7 @@ export default function PaywallScreen() {
 
       {/* Close button */}
       <Pressable style={styles.closeBtn} onPress={() => navigation.goBack()}>
-        <Text style={styles.closeBtnText}>✕</Text>
+        <X size={14} strokeWidth={1.75} color={Colors.brand.text} />
       </Pressable>
 
       <ScrollView
@@ -110,62 +243,98 @@ export default function PaywallScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Lock icon */}
-        <Text style={styles.lockEmoji}>🔒</Text>
+        <View style={styles.lockIconContainer}>
+          {alreadyUnlocked ? (
+            <LockOpen size={56} strokeWidth={1.5} color={Colors.brand.text} />
+          ) : (
+            <Lock size={56} strokeWidth={1.5} color={Colors.brand.text} />
+          )}
+        </View>
 
         {/* Episode info */}
         <Text style={styles.dramaTitle}>{drama.title}</Text>
         <Text style={styles.episodeLabel}>
-          Episode {episode.episodeNumber} — {episode.title}
+          Episode {episode.episodeNumber} - {episode.title}
         </Text>
 
         {/* Coin balance */}
         <View style={styles.coinBadge}>
-          <Text style={styles.coinBadgeText}>🪙 Your balance: {userCoins} coins</Text>
+          <View style={styles.coinBadgeRow}>
+            <Key size={14} strokeWidth={1.75} color={Colors.brand.text} />
+            <Text style={styles.coinBadgeText}>
+              Your balance: {token ? coinBalance : 0} coins
+            </Text>
+          </View>
         </View>
 
-        <Text style={styles.sectionLabel}>Choose how to unlock</Text>
+        {alreadyUnlocked ? (
+          <Pressable
+            style={[styles.optionCard, styles.optionCardPrimary]}
+            onPress={() => navigation.goBack()}
+          >
+            <View style={styles.watchNowRow}>
+              <Play size={16} strokeWidth={1.75} color={Colors.brand.text} fill={Colors.brand.text} />
+              <Text style={[styles.optionTitle, { textAlign: 'center' }]}>
+                Watch Now
+              </Text>
+            </View>
+          </Pressable>
+        ) : (
+          <>
+            <Text style={styles.sectionLabel}>Choose how to unlock</Text>
 
-        {/* Option 1: Watch ad */}
-        <OptionCard
-          title="Watch a Short Ad"
-          subtitle={`Earn ${COIN_REWARD_FROM_AD} coins → auto-unlocks this episode`}
-          badge="FREE"
-          badgeColor={Colors.ui.success}
-          onPress={handleWatchAd}
-          loading={loading}
-          primary
-        />
+            {/* Option 1: Watch ad */}
+            <OptionCard
+              title="Watch a Short Ad"
+              subtitle={`Earn ${COIN_REWARD_FROM_AD} coins -> auto-unlocks this episode`}
+              badge="FREE"
+              badgeColor={Colors.ui.success}
+              onPress={handleWatchAd}
+              loading={loading}
+              primary
+            />
 
-        {/* Option 2: Spend coins */}
-        <OptionCard
-          title={`Spend ${episode.coinCost} Coins`}
-          subtitle={
-            canAfford
-              ? 'Use your coin balance to unlock instantly'
-              : `You need ${episode.coinCost - userCoins} more coins`
-          }
-          badge={`${episode.coinCost} 🪙`}
-          badgeColor={Colors.brand.card}
-          onPress={handleSpendCoins}
-          loading={loading}
-          disabled={!canAfford}
-        />
+            {/* Option 2: Spend coins */}
+            <OptionCard
+              title={`Spend ${episode.coinCost} Coins`}
+              subtitle={
+                !token
+                  ? 'Sign in to use your coin balance'
+                  : canAfford
+                  ? 'Use your coin balance to unlock instantly'
+                  : `You need ${episode.coinCost - coinBalance} more coins`
+              }
+              badge={`${episode.coinCost} coins`}
+              badgeColor={Colors.brand.card}
+              onPress={handleSpendCoins}
+              loading={loading}
+              disabled={!token || !canAfford}
+            />
 
-        {/* Option 3: Subscribe */}
-        <Pressable style={styles.subscribeBtn} onPress={handleSubscribe}>
-          <Text style={styles.subscribeBtnText}>
-            💎 Unlimited Access — Subscribe
-          </Text>
-          <Text style={styles.subscribeSubText}>
-            Unlock all episodes forever
-          </Text>
-        </Pressable>
+            {/* Option 3: Subscribe */}
+            <Pressable
+              style={[styles.subscribeBtn, loading && { opacity: 0.6 }]}
+              onPress={handleSubscribe}
+              disabled={loading}
+            >
+              <View style={styles.subscribeRow}>
+                <CheckCircle size={16} strokeWidth={1.75} color={Colors.brand.red} />
+                <Text style={styles.subscribeBtnText}>
+                  Unlimited Access - Subscribe
+                </Text>
+              </View>
+              <Text style={styles.subscribeSubText}>
+                Unlock all episodes forever
+              </Text>
+            </Pressable>
 
-        <Text style={styles.legal}>
-          By subscribing, you agree to our{' '}
-          <Text style={styles.legalLink}>Terms of Service</Text> and{' '}
-          <Text style={styles.legalLink}>Privacy Policy</Text>.
-        </Text>
+            <Text style={styles.legal}>
+              By subscribing, you agree to our{' '}
+              <Text style={styles.legalLink}>Terms of Service</Text> and{' '}
+              <Text style={styles.legalLink}>Privacy Policy</Text>.
+            </Text>
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -212,9 +381,7 @@ function OptionCard({
           </Text>
           <Text style={styles.optionSubtitle}>{subtitle}</Text>
         </View>
-        <View
-          style={[styles.optionBadge, { backgroundColor: badgeColor }]}
-        >
+        <View style={[styles.optionBadge, { backgroundColor: badgeColor }]}>
           <Text style={styles.optionBadgeText}>{badge}</Text>
         </View>
       </View>
@@ -247,17 +414,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.brand.border,
   },
-  closeBtnText: {
-    color: Colors.brand.text,
-    fontSize: 14,
-  },
   content: {
     padding: Spacing.xl,
     paddingTop: 100,
     alignItems: 'center',
   },
-  lockEmoji: {
-    fontSize: 56,
+  lockIconContainer: {
     marginBottom: Spacing.md,
   },
   dramaTitle: {
@@ -281,6 +443,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     marginBottom: Spacing.xl,
+  },
+  coinBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   coinBadgeText: {
     color: Colors.brand.text,
@@ -343,6 +510,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.xs,
     fontWeight: Typography.weights.bold,
   },
+  watchNowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   subscribeBtn: {
     width: '100%',
     borderWidth: 1,
@@ -353,6 +526,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing.sm,
     marginBottom: Spacing.lg,
+  },
+  subscribeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   subscribeBtnText: {
     color: Colors.brand.red,

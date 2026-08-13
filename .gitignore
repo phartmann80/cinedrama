@@ -1,5 +1,3 @@
-# Root gitignore — applies across the whole monorepo
-
 # Dependencies
 node_modules/
 .pnp
@@ -12,22 +10,11 @@ dist/
 build/
 *.tsbuildinfo
 
-# Env files
+# Environment / secrets
 .env
 .env.local
 .env.*.local
 .env.production
-
-# OS
-.DS_Store
-Thumbs.db
-*.pem
-
-# Editors
-.vscode/settings.json
-.idea/
-*.suo
-*.user
 
 # Expo / React Native
 .expo/
@@ -35,15 +22,31 @@ android/
 ios/
 web-build/
 
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Replit sandbox (do not commit)
+replit.md
+.replit
+.replit-artifact/
+.replitignore
 
-# Misc
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.suo
+*.user
+
+# Signing / keys
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.pem
+credentials.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

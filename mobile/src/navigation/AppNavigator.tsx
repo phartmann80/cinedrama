@@ -2,7 +2,8 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { Home, Film, User } from 'lucide-react-native';
 import { Colors } from '../constants/theme';
 import type { RootStackParamList } from '../types';
 
@@ -22,14 +23,14 @@ function TabIcon({
   name: string;
   focused: boolean;
 }) {
-  const icons: Record<string, string> = {
-    Home: '🏠',
-    Feed: '▶️',
-    Profile: '👤',
+  const icons: Record<string, React.ReactNode> = {
+    Home: <Home size={20} strokeWidth={1.75} color={focused ? Colors.brand.red : Colors.brand.muted} />,
+    Feed: <Film size={20} strokeWidth={1.75} color={focused ? Colors.brand.red : Colors.brand.muted} />,
+    Profile: <User size={20} strokeWidth={1.75} color={focused ? Colors.brand.red : Colors.brand.muted} />,
   };
   return (
     <View style={styles.tabIcon}>
-      <Text style={styles.tabEmoji}>{icons[name] ?? '•'}</Text>
+      {icons[name] ?? null}
       {focused && <View style={styles.tabDot} />}
     </View>
   );
@@ -105,9 +106,6 @@ const styles = StyleSheet.create({
   tabIcon: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  tabEmoji: {
-    fontSize: 20,
   },
   tabDot: {
     width: 4,
