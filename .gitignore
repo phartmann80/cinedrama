@@ -1,34 +1,34 @@
-# ── Dependencies ──────────────────────────────────────────────────────────────
+# Dependencies
 node_modules/
 .pnp
 .pnp.js
 
-# ── Build outputs ─────────────────────────────────────────────────────────────
+# Build outputs
 .next/
 out/
 dist/
 build/
 *.tsbuildinfo
 
-# ── Environment / secrets ─────────────────────────────────────────────────────
+# Environment / secrets
 .env
 .env.local
 .env.*.local
 .env.production
 
-# ── Expo / React Native ───────────────────────────────────────────────────────
+# Expo / React Native
 .expo/
 android/
 ios/
 web-build/
 
-# ── Replit sandbox (do not commit) ───────────────────────────────────────────
+# Replit sandbox (do not commit)
 replit.md
 .replit
 .replit-artifact/
 .replitignore
 
-# ── OS / editors ──────────────────────────────────────────────────────────────
+# OS / editors
 .DS_Store
 Thumbs.db
 .idea/
@@ -36,15 +36,16 @@ Thumbs.db
 *.suo
 *.user
 
-# ── Signing / keys ────────────────────────────────────────────────────────────
+# Signing / keys
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
 *.pem
+credentials.json
 
-# ── Logs ──────────────────────────────────────────────────────────────────────
+# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*

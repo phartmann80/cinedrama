@@ -1,3 +1,0 @@
-{
-  "install": "npm --prefix web install\nnpm --prefix mobile install\nnpm --prefix backend install"
-}
