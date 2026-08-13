@@ -6,9 +6,66 @@ import { signMediaUrl } from '../lib/signedUrl.js';
 
 export const episodesRouter = Router({ mergeParams: true });
 
+// Mock episode data generator
+const DRAMA_EPISODE_COUNTS: Record<string, number> = {
+  'drama-001': 24,
+  'drama-002': 18,
+  'drama-003': 30,
+  'drama-004': 20,
+};
+
+const TITLE_POOL = [
+  'The Beginning', 'Shadows Fall', 'No Way Back', 'The Truth Revealed',
+  'Burning Bridges', 'Into the Storm', 'The Last Chance', 'Betrayal',
+  'Reckoning', 'A New Dawn', 'The Price of Power', 'Unmasked',
+  'Crossroads', 'The Final Gambit', 'Aftermath',
+];
+
+function mockEpisodes(dramaId: string, count: number) {
+  return Array.from({ length: count }, (_, i) => {
+    const ep = i + 1;
+    const isLocked = ep > 2;
+    return {
+      id: `${dramaId}-ep-${ep.toString().padStart(3, '0')}`,
+      dramaId,
+      episodeNumber: ep,
+      title: TITLE_POOL[(ep - 1) % TITLE_POOL.length],
+      durationSeconds: 90 + Math.floor(Math.random() * 60),
+      videoUrl: isLocked ? null : `https://cdn.cinedrama.app/videos/${dramaId}/ep${ep}.m3u8`,
+      thumbnailUrl: `https://cdn.cinedrama.app/thumbs/${dramaId}/ep${ep}.jpg`,
+      isLocked,
+      coinCost: isLocked ? 5 : 0,
+    };
+  });
+}
+
 episodesRouter.get('/', optionalAuth, async (req: Request, res: Response) => {
   const dramaId = String(req.params.id);
   const authReq = req as AuthRequest;
+
+  // Mock mode: return mock data when DATABASE_URL is not set
+  if (process.env.USE_MOCK_DB === 'true' || !process.env.DATABASE_URL) {
+    const count = DRAMA_EPISODE_COUNTS[dramaId];
+    if (!count) {
+      res.status(404).json({ error: 'Drama not found' });
+      return;
+    }
+    const episodes = mockEpisodes(dramaId, count);
+    
+    // In mock mode, if authenticated, unlock all episodes
+    if (authReq.user) {
+      const enriched = episodes.map((ep) => ({
+        ...ep,
+        isLocked: false,
+        videoUrl: `https://cdn.cinedrama.app/videos/${dramaId}/ep${ep.episodeNumber}.m3u8`,
+      }));
+      res.json(enriched);
+      return;
+    }
+    
+    res.json(episodes);
+    return;
+  }
 
   try {
     const db = getDb();
@@ -69,6 +126,30 @@ episodesRouter.get('/:epNum', optionalAuth, async (req: Request, res: Response) 
   const epNumber = parseInt(String(req.params.epNum), 10);
   if (isNaN(epNumber) || epNumber < 1) {
     res.status(400).json({ error: 'Invalid episode number' });
+    return;
+  }
+
+  // Mock mode: return mock data when DATABASE_URL is not set
+  if (process.env.USE_MOCK_DB === 'true' || !process.env.DATABASE_URL) {
+    const count = DRAMA_EPISODE_COUNTS[dramaId];
+    if (!count) {
+      res.status(404).json({ error: 'Drama not found' });
+      return;
+    }
+    if (epNumber > count) {
+      res.status(404).json({ error: 'Episode not found' });
+      return;
+    }
+    const episodes = mockEpisodes(dramaId, count);
+    const episode = episodes[epNumber - 1];
+    
+    // In mock mode, if authenticated, unlock the episode
+    if (episode.isLocked && authReq.user) {
+      res.json({ ...episode, isLocked: false, videoUrl: `https://cdn.cinedrama.app/videos/${dramaId}/ep${epNumber}.m3u8` });
+      return;
+    }
+    
+    res.json(episode);
     return;
   }
 
