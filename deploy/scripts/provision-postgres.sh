@@ -22,19 +22,33 @@ PG_CONF="/etc/postgresql/16/main/postgresql.conf"
 echo "=== CineDrama PostgreSQL provisioning ==="
 
 # --- 1. Install PostgreSQL 16 if not present ---
-if ! command -v psql &> /dev/null; then
+# Check for the server itself, not just the psql client binary.
+# command -v psql false-positives when only postgresql-client is installed.
+#
+# On Ubuntu 24.04, the native postgresql-16 package is available in the
+# default repo and is preferred over the PGDG repo. On Ubuntu 22.04 and
+# earlier, we add the PGDG repo to get PostgreSQL 16.
+if dpkg -s postgresql-16 &> /dev/null; then
+  echo "[1/6] PostgreSQL 16 server already installed."
+else
   echo "[1/6] Installing PostgreSQL 16..."
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates gnupg
-  install -d /usr/share/postgresql-common/pgdg
-  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-    -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-    > /etc/apt/sources.list.d/pgdg.list
-  apt-get update -qq
-  apt-get install -y -qq postgresql-16
-else
-  echo "[1/6] PostgreSQL already installed."
+
+  # Try the native Ubuntu repo first (Ubuntu 24.04 ships postgresql-16)
+  if apt-cache show postgresql-16 2>/dev/null | grep -q "Package: postgresql-16"; then
+    echo "    Installing from native Ubuntu repo (Ubuntu 24.04+)"
+    apt-get install -y -qq postgresql-16
+  else
+    echo "    Native package not found, adding PGDG repo (Ubuntu 22.04)"
+    install -d /usr/share/postgresql-common/pgdg
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+      -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list
+    apt-get update -qq
+    apt-get install -y -qq postgresql-16
+  fi
 fi
 
 # --- 2. Start the service ---
