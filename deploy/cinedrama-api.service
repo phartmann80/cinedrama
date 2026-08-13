@@ -1,0 +1,38 @@
+[Unit]
+Description=CineDrama API Server (Express)
+Documentation=https://github.com/phartmann80/cinedrama
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=cinedrama
+Group=cinedrama
+
+WorkingDirectory=/opt/cinedrama/backend
+EnvironmentFile=/etc/cinedrama/backend.env
+
+# NODE_ENV=production is set in the EnvironmentFile.
+# Production guards in src/index.ts enforce DATABASE_URL and CORS_ORIGINS.
+
+ExecStart=/usr/bin/node --enable-source-maps dist/index.js
+
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/cinedrama/backend
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cinedrama-api
+
+[Install]
+WantedBy=multi-user.target
