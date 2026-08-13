@@ -9,12 +9,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'CineDrama — Stream Drama, Feel Every Scene',
+  title: 'CineDrama: Stream Drama, Feel Every Scene',
   description:
-    'CineDrama brings you the most gripping short-form drama series in a vertical video feed. Download the app and lose yourself in stories built for your phone.',
+    'CineDrama brings you gripping short-form drama series in a vertical video feed. Download the app and lose yourself in stories built for your phone.',
   metadataBase: new URL('https://cinedrama.app'),
   openGraph: {
-    title: 'CineDrama — Stream Drama, Feel Every Scene',
+    title: 'CineDrama: Stream Drama, Feel Every Scene',
     description:
       'Short-form drama series in a vertical video feed. Built for mobile. Download the APK free.',
     images: ['/og-image.png'],
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CineDrama — Stream Drama, Feel Every Scene',
+    title: 'CineDrama: Stream Drama, Feel Every Scene',
     description:
       'Short-form drama series in a vertical video feed. Built for mobile.',
     images: ['/og-image.png'],

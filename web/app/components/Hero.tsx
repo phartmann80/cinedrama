@@ -69,7 +69,7 @@ export default function Hero() {
         {/* Subheadline */}
         <p className="mt-6 text-lg md:text-xl text-brand-muted max-w-2xl mx-auto leading-relaxed animate-fade-up animation-delay-200">
           Swipe through gripping Billionaire Revenge, Sci-Fi Thrillers, and
-          Romantic Suspense — each episode crafted for your phone, ready to
+          Romantic Suspense, each episode crafted for your phone, ready to
           watch in one sitting.
         </p>
 

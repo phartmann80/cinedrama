@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — CineDrama',
+  title: 'Privacy Policy - CineDrama',
   description: 'How CineDrama collects, uses, and protects your personal data.',
 };
 

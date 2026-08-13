@@ -144,7 +144,7 @@ export default function FeedScreen() {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={Colors.brand.red} />
-        <Text style={styles.loadingText}>Loading your feed…</Text>
+        <Text style={styles.loadingText}>Loading your feed...</Text>
       </View>
     );
   }

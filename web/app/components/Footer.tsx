@@ -14,10 +14,6 @@ export default function Footer() {
               Cine<span className="text-brand-red">Drama</span>
             </span>
           </div>
-          <p className="text-brand-muted text-sm leading-relaxed max-w-xs">
-            Cinematic short-form drama streaming built for mobile. Swipe,
-            watch, and get obsessed — one episode at a time.
-          </p>
           <a
             href="mailto:support@cinedrama.app"
             className="mt-4 inline-flex items-center gap-2 text-brand-muted text-sm hover:text-white transition-colors"
@@ -99,11 +95,8 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl mt-12 pt-6 border-t border-brand-border flex flex-col sm:flex-row items-center justify-between gap-4 text-brand-muted text-xs">
+      <div className="mx-auto max-w-7xl mt-12 pt-6 border-t border-brand-border flex items-center justify-center text-brand-muted text-xs">
         <p>© {year} CineDrama. All rights reserved.</p>
-        <p>
-          Built for Android · Powered by AI-Generated Content
-        </p>
       </div>
     </footer>
   );

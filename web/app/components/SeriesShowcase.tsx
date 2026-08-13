@@ -4,10 +4,10 @@ const SERIES = [
   {
     id: 1,
     title: "Billionaire's Revenge",
-    genre: 'Drama · Thriller',
+    genre: 'Drama, Thriller',
     episodes: 24,
     description:
-      'When a self-made billionaire discovers his fiancée married his rival, he orchestrates a meticulous corporate takedown that tears both families apart.',
+      'When a self-made billionaire discovers his fiancee married his rival, he orchestrates a meticulous corporate takedown that tears both families apart.',
     color: 'from-red-900 to-brand-dark',
     badge: 'HOT',
     badgeColor: 'bg-brand-red',
@@ -15,10 +15,10 @@ const SERIES = [
   {
     id: 2,
     title: 'Neon Exodus',
-    genre: 'Sci-Fi · Action',
+    genre: 'Sci-Fi, Action',
     episodes: 18,
     description:
-      'In 2089, a rogue AI detective hunts synthetic humans disguised as citizens — until she discovers she might be one of them.',
+      'In 2089, a rogue AI detective hunts synthetic humans disguised as citizens, until she discovers she might be one of them.',
     color: 'from-blue-900 to-brand-dark',
     badge: 'NEW',
     badgeColor: 'bg-blue-600',
@@ -26,10 +26,10 @@ const SERIES = [
   {
     id: 3,
     title: 'Whisper of the Tide',
-    genre: 'Romance · Suspense',
+    genre: 'Romance, Suspense',
     episodes: 30,
     description:
-      'A marine biologist and a mysterious salvage diver uncover a decades-old maritime conspiracy — and an undeniable connection between them.',
+      'A marine biologist and a mysterious salvage diver uncover a decades-old maritime conspiracy and an undeniable connection between them.',
     color: 'from-teal-900 to-brand-dark',
     badge: 'TRENDING',
     badgeColor: 'bg-teal-600',
@@ -37,7 +37,7 @@ const SERIES = [
   {
     id: 4,
     title: 'Crown of Lies',
-    genre: 'Political · Drama',
+    genre: 'Political, Drama',
     episodes: 20,
     description:
       "The heir to a political dynasty must choose between her family's legacy and the journalist who threatens to expose everything.",
@@ -75,7 +75,7 @@ export default function SeriesShowcase() {
         {/* More coming */}
         <div className="mt-10 text-center">
           <span className="text-brand-muted text-sm">
-            New series drop every week —{' '}
+            New series drop every week.{' '}
             <a
               href="#download"
               className="text-brand-red underline underline-offset-2 hover:text-red-400"

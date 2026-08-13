@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service — CineDrama',
+  title: 'Terms of Service - CineDrama',
   description: 'Terms and conditions for using CineDrama.',
 };
 
