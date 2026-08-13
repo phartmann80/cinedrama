@@ -31,7 +31,7 @@ npx eas-cli build --platform android --profile apk
 
 **Option A — Cloudflare R2 (recommended, free egress)**
 
-1. Create an R2 bucket in the Cloudflare dashboard (Storage → R2).
+1. Create an R2 bucket in the Cloudflare dashboard (Storage - R2).
 2. Upload `cinedrama-latest.apk`.
 3. Enable Public Access and note the public URL, e.g.:
    `https://pub-XXXX.r2.dev/cinedrama-latest.apk`
@@ -53,7 +53,7 @@ Public URL: `https://api.cinedrama.app/download/cinedrama-latest.apk`
 1. Go to <https://vercel.com/new> and import the GitHub repo `phartmann80/cinedrama`.
 2. **IMPORTANT:** Set **Root Directory** to `web`.
 3. Framework preset will auto-detect **Next.js** — leave it.
-4. Add these environment variables (Settings → Environment Variables):
+4. Add these environment variables (Settings - Environment Variables):
 
    | Name | Value |
    |------|-------|
@@ -76,7 +76,7 @@ vercel --prod                # deploy to production
 
 ## Step 3 — Configure the Domain
 
-In the Vercel project → **Settings → Domains**, add `cinedrama.app` and `www.cinedrama.app`.
+In the Vercel project - **Settings - Domains**, add `cinedrama.app` and `www.cinedrama.app`.
 
 Then update your DNS registrar with **one** of these options:
 
@@ -156,5 +156,5 @@ Once the GitHub repo is connected to Vercel, every push to `main` automatically 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NEXT_PUBLIC_APK_URL` | ✅ | Direct link to the hosted APK file |
-| `NEXT_PUBLIC_API_BASE_URL` | ✅ | Backend API base URL |
+| `NEXT_PUBLIC_APK_URL` | Yes | Direct link to the hosted APK file |
+| `NEXT_PUBLIC_API_BASE_URL` | Yes | Backend API base URL |

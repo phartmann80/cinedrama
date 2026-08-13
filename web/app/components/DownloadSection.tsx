@@ -21,7 +21,7 @@ export default function DownloadSection() {
         </h2>
 
         <p className="text-brand-muted text-lg mb-10 max-w-xl mx-auto">
-          Download the Android APK directly — no Play Store required. Install,
+          Download the Android APK directly - no Play Store required. Install,
           open, and your vertical drama feed is ready in under a minute.
         </p>
 
@@ -41,7 +41,7 @@ export default function DownloadSection() {
             </span>
           </div>
           <span className="text-red-200 text-sm font-normal">
-            cinedrama-latest.apk · Free · Android 8.0+
+            cinedrama-latest.apk - Free - Android 8.0+
           </span>
         </a>
 
@@ -59,14 +59,14 @@ export default function DownloadSection() {
               Install tip
             </p>
             <p className="text-brand-muted text-xs leading-relaxed">
-              On Android, go to <strong className="text-white">Settings → Security → Unknown Sources</strong>{' '}
+              On Android, go to <strong className="text-white">Settings - Security - Unknown Sources</strong>{' '}
               and enable "Allow from this source" before installing. You can
               disable it afterwards.
             </p>
           </div>
         </div>
 
-        {/* Coming soon — stores */}
+        {/* Coming soon - stores */}
         <div className="mt-10 flex items-center justify-center gap-6 text-brand-muted text-xs">
           <span>Coming soon:</span>
           <span className="border border-brand-border px-3 py-1 rounded-full">
