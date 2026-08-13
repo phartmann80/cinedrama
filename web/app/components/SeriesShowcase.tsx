@@ -3,7 +3,7 @@
 const SERIES = [
   {
     id: 1,
-    title: 'Billionaire's Revenge',
+    title: "Billionaire's Revenge",
     genre: 'Drama · Thriller',
     episodes: 24,
     description:
@@ -40,7 +40,7 @@ const SERIES = [
     genre: 'Political · Drama',
     episodes: 20,
     description:
-      'The heir to a political dynasty must choose between her family's legacy and the journalist who threatens to expose everything.',
+      "The heir to a political dynasty must choose between her family's legacy and the journalist who threatens to expose everything.",
     color: 'from-purple-900 to-brand-dark',
     badge: 'EXCLUSIVE',
     badgeColor: 'bg-purple-600',

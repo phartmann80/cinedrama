@@ -26,9 +26,7 @@ web-build/
 replit.md
 .replit
 .replit-artifact/
-pnpm-workspace.yaml
-pnpm-lock.yaml
-tsconfig.base.json
+.replitignore
 
 # ── OS / editors ──────────────────────────────────────────────────────────────
 .DS_Store

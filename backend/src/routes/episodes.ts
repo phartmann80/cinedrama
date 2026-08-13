@@ -1,62 +1,120 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
+import { eq, and, asc } from 'drizzle-orm';
+import { getDb, dramasTable, episodesTable, unlocksTable } from '../db/index.js';
+import { optionalAuth, type AuthRequest } from '../lib/auth.js';
+import { signMediaUrl } from '../lib/signedUrl.js';
 
-// mergeParams gives access to :id from the parent router
 export const episodesRouter = Router({ mergeParams: true });
 
-// ─── Mock data generator ──────────────────────────────────────────────────────
-// TODO: Replace with db.select().from(episodesTable).where(...) once DB task complete.
-// Video URLs should become Cloudflare R2 presigned URLs (TTL ~1h) in production.
+episodesRouter.get('/', optionalAuth, async (req: Request, res: Response) => {
+  const dramaId = String(req.params.id);
+  const authReq = req as AuthRequest;
 
-const DRAMA_EPISODE_COUNTS: Record<string, number> = {
-  'drama-001': 24,
-  'drama-002': 18,
-  'drama-003': 30,
-  'drama-004': 20,
-};
+  try {
+    const db = getDb();
+    const [drama] = await db
+      .select({ id: dramasTable.id })
+      .from(dramasTable)
+      .where(and(eq(dramasTable.id, dramaId), eq(dramasTable.isActive, true)))
+      .limit(1);
 
-const TITLE_POOL = [
-  'The Beginning', 'Shadows Fall', 'No Way Back', 'The Truth Revealed',
-  'Burning Bridges', 'Into the Storm', 'The Last Chance', 'Betrayal',
-  'Reckoning', 'A New Dawn', 'The Price of Power', 'Unmasked',
-  'Crossroads', 'The Final Gambit', 'Aftermath',
-];
+    if (!drama) {
+      res.status(404).json({ error: 'Drama not found' });
+      return;
+    }
 
-function mockEpisodes(dramaId: string, count: number) {
-  return Array.from({ length: count }, (_, i) => {
-    const ep = i + 1;
-    const isLocked = ep > 2;
-    return {
-      id: `${dramaId}-ep-${ep.toString().padStart(3, '0')}`,
-      dramaId,
-      episodeNumber: ep,
-      title: TITLE_POOL[(ep - 1) % TITLE_POOL.length],
-      durationSeconds: 90 + Math.floor(Math.random() * 60),
-      // Locked episodes return null URL — client shows paywall
-      videoUrl: isLocked ? null : `https://cdn.cinedrama.app/videos/${dramaId}/ep${ep}.m3u8`,
-      thumbnailUrl: `https://cdn.cinedrama.app/thumbs/${dramaId}/ep${ep}.jpg`,
-      isLocked,
-      coinCost: isLocked ? 5 : 0,
-    };
-  });
-}
+    const episodes = await db
+      .select()
+      .from(episodesTable)
+      .where(eq(episodesTable.dramaId, dramaId))
+      .orderBy(asc(episodesTable.episodeNumber));
 
-// ─── GET /api/v1/dramas/:id/episodes ─────────────────────────────────────────
+    if (authReq.user) {
+      const unlocks = await db
+        .select({ episodeId: unlocksTable.episodeId })
+        .from(unlocksTable)
+        .where(eq(unlocksTable.userId, authReq.user.id));
 
-episodesRouter.get('/', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const count = DRAMA_EPISODE_COUNTS[id];
-  if (!count) { res.status(404).json({ error: 'Drama not found' }); return; }
-  res.json(mockEpisodes(id, count));
+      const unlockedSet = new Set(unlocks.map((u) => u.episodeId));
+
+      const enriched = episodes.map((ep) => {
+        const stillLocked = ep.isLocked && !unlockedSet.has(ep.id);
+        return {
+          ...ep,
+          isLocked: stillLocked,
+          videoUrl: stillLocked ? null : signMediaUrl(ep.id),
+        };
+      });
+
+      res.json(enriched);
+      return;
+    }
+
+    const sanitized = episodes.map((ep) => ({
+      ...ep,
+      videoUrl: ep.isLocked ? null : signMediaUrl(ep.id),
+    }));
+
+    res.json(sanitized);
+  } catch (err) {
+    req.log.error(err, 'Failed to fetch episodes');
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// ─── GET /api/v1/dramas/:id/episodes/:epNum ───────────────────────────────────
+episodesRouter.get('/:epNum', optionalAuth, async (req: Request, res: Response) => {
+  const dramaId = String(req.params.id);
+  const authReq = req as AuthRequest;
 
-episodesRouter.get('/:epNum', async (req: Request, res: Response) => {
-  const { id, epNum } = req.params;
-  const count = DRAMA_EPISODE_COUNTS[id];
-  if (!count) { res.status(404).json({ error: 'Drama not found' }); return; }
-  const n = parseInt(epNum, 10);
-  if (isNaN(n) || n < 1 || n > count) { res.status(404).json({ error: 'Episode not found' }); return; }
-  const [episode] = mockEpisodes(id, n).slice(-1);
-  res.json(episode);
+  const epNumber = parseInt(String(req.params.epNum), 10);
+  if (isNaN(epNumber) || epNumber < 1) {
+    res.status(400).json({ error: 'Invalid episode number' });
+    return;
+  }
+
+  try {
+    const db = getDb();
+    const [drama] = await db
+      .select({ id: dramasTable.id })
+      .from(dramasTable)
+      .where(and(eq(dramasTable.id, dramaId), eq(dramasTable.isActive, true)))
+      .limit(1);
+
+    if (!drama) {
+      res.status(404).json({ error: 'Drama not found' });
+      return;
+    }
+
+    const [episode] = await db
+      .select()
+      .from(episodesTable)
+      .where(and(eq(episodesTable.dramaId, dramaId), eq(episodesTable.episodeNumber, epNumber)))
+      .limit(1);
+
+    if (!episode) {
+      res.status(404).json({ error: 'Episode not found' });
+      return;
+    }
+
+    if (episode.isLocked && authReq.user) {
+      const [unlock] = await db
+        .select({ id: unlocksTable.id })
+        .from(unlocksTable)
+        .where(and(eq(unlocksTable.userId, authReq.user.id), eq(unlocksTable.episodeId, episode.id)))
+        .limit(1);
+
+      if (unlock) {
+        res.json({ ...episode, isLocked: false, videoUrl: signMediaUrl(episode.id) });
+        return;
+      }
+    }
+
+    res.json({
+      ...episode,
+      videoUrl: episode.isLocked ? null : signMediaUrl(episode.id),
+    });
+  } catch (err) {
+    req.log.error(err, 'Failed to fetch episode');
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });

@@ -1,13 +1,47 @@
-# ⚠️  Legacy Mock-Only Backend — Do Not Deploy
+# CineDrama API (`/backend`)
 
-This directory contains a standalone mock Express server that was created before
-the real database-backed API was built. It serves **hardcoded, in-memory data
-only** and has no database connection.
+Standalone Express 5 + PostgreSQL (Drizzle) service. Deploy this directory to the Linux VPS. It has **no workspace, Replit, or pnpm catalog dependencies** — `npm install && npm run dev` works anywhere Node 20+ is installed.
 
-**It is NOT the production API.**
+## Quick start
 
-The real, database-backed API is in:
-  `artifacts/api-server/` — backed by PostgreSQL via Drizzle ORM
+```bash
+cd backend
+cp .env.example .env          # set DATABASE_URL and JWT_SECRET
+npm install
+npm run db:push               # create tables
+npm run db:seed               # four sample series
+npm run dev                   # http://localhost:5000
+```
 
-Do not start, deploy, or route traffic to this directory. It exists only for
-historical reference and will be removed in a future cleanup.
+Health check: `GET http://localhost:5000/api/healthz` → `{"status":"ok"}`
+
+## Scripts
+
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | TypeScript watch server (`tsx`) |
+| `npm run build` / `npm start` | Compile to `dist/` and run production |
+| `npm test` | Vitest (media-gateway HMAC tests, no DB required) |
+| `npm run db:push` | Apply Drizzle schema to PostgreSQL |
+| `npm run db:seed` | Idempotent seed of four dramas + episodes |
+
+## Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/healthz` | None | Health check |
+| `GET` | `/api/v1/dramas` | None | List active series (pagination, genre, search) |
+| `GET` | `/api/v1/dramas/:id` | None | Single drama |
+| `GET` | `/api/v1/dramas/:id/episodes` | Optional JWT | Episode list (locked URLs hidden) |
+| `GET` | `/api/v1/dramas/:id/episodes/:n` | Optional JWT | Single episode |
+| `GET` | `/api/v1/media/play` | HMAC token | Proxy video from private CDN |
+| `POST` | `/api/v1/user/register` | None | Register + JWT |
+| `POST` | `/api/v1/user/login` | None | Login + JWT |
+| `GET` | `/api/v1/user/me` | JWT | Profile, coins, unlocks, likes |
+| `POST` | `/api/v1/user/unlock` | JWT | Unlock via coins or ad reward |
+| `GET` | `/api/v1/user/admob-ssv` | AdMob ECDSA | Server-side ad verification |
+| `POST` | `/api/v1/user/like` | JWT | Like an episode |
+
+## Env vars (names only)
+
+`PORT`, `NODE_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `JWT_SECRET` (or fallback `SESSION_SECRET`), `CORS_ORIGINS`, optional `R2_*`.
