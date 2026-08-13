@@ -11,7 +11,7 @@ All scripts and configs are in `/deploy`. Execute in order on the VPS.
 - Ubuntu 22.04+ VPS
 - Root or sudo access
 - Node.js 20+ installed (`node --version`)
-- Domain `api.cinedrama.app` pointed to the VPS IP (A record)
+- DNS A record for `api.cinedrama.app` pointing to the VPS IP must exist before certbot runs
 - Ports 80 and 443 open in the firewall
 
 ---
@@ -119,20 +119,23 @@ sudo journalctl -u cinedrama-api --no-pager -n 20
 
 ---
 
-## Step 5: Install and configure Nginx
+## Step 5: Install Nginx with HTTP-only config (Phase 1)
+
+The shipped config has only the port-80 server block active. The 443 block is
+commented out and must stay commented until certificates exist.
 
 ```bash
 # Install Nginx if not present
 sudo apt-get install -y nginx
 
-# Install the site config
+# Install the site config (HTTP-only at this point)
 sudo cp /opt/cinedrama/deploy/nginx/cinedrama-api.conf /etc/nginx/sites-available/
 sudo ln -sf /etc/nginx/sites-available/cinedrama-api.conf /etc/nginx/sites-enabled/
 
 # Remove the default site if present
 sudo rm -f /etc/nginx/sites-enabled/default
 
-# Test the config
+# Test the config (must pass before reload)
 sudo nginx -t
 # Should show: "test is successful"
 
@@ -140,21 +143,60 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+Verify the backend is reachable over HTTP:
+
+```bash
+curl -s http://api.cinedrama.app/api/healthz
+# Should return: {"status":"ok",...}
+```
+
 ---
 
-## Step 6: SSL via Certbot/Let's Encrypt
+## Step 6: Obtain SSL certificates via Certbot
+
+The DNS A record for `api.cinedrama.app` must already point to this VPS.
 
 ```bash
 # Install certbot
 sudo apt-get install -y certbot python3-certbot-nginx
 
-# Obtain and install the certificate
+# Obtain the certificate (certbot uses the ACME challenge path served in Phase 1)
 sudo certbot --nginx -d api.cinedrama.app \
   --non-interactive --agree-tos --email support@cinedrama.app \
   --redirect
 
-# Certbot auto-edits the Nginx config to add the SSL lines and
-# sets up auto-renewal via systemd timer.
+# Certbot writes certificates to /etc/letsencrypt/live/api.cinedrama.app/
+# and sets up auto-renewal via systemd timer.
+```
+
+Verify the certificates exist:
+
+```bash
+sudo ls /etc/letsencrypt/live/api.cinedrama.app/
+# Should show: fullchain.pem  privkey.pem
+```
+
+---
+
+## Step 7: Enable the HTTPS block (Phase 2)
+
+Uncomment the entire 443 server block in the Nginx config (search for
+`UNCOMMENT AFTER CERTBOT`):
+
+```bash
+sudo nano /etc/nginx/sites-available/cinedrama-api.conf
+# Remove the # prefix from every line in the 443 block.
+# In the 80 block, replace the proxy location / with:
+#   return 301 https://$host$request_uri;
+```
+
+Test and reload:
+
+```bash
+sudo nginx -t
+# Should show: "test is successful"
+
+sudo systemctl reload nginx
 ```
 
 Verify HTTPS works:
@@ -166,7 +208,7 @@ curl -I https://api.cinedrama.app/api/healthz
 
 ---
 
-## Step 7: Run the smoke test
+## Step 8: Run the smoke test
 
 ```bash
 # Against localhost (no SSL needed)
@@ -184,7 +226,7 @@ All three checks should pass:
 
 ---
 
-## Step 8: Verify production guards
+## Step 9: Verify production guards
 
 The backend has two fail-fast guards in `src/index.ts`. Verify they work:
 
@@ -222,6 +264,12 @@ sudo systemctl status cinedrama-api
 curl -s http://localhost:5000/api/healthz
 ```
 
+### nginx -t fails with "no ssl_certificate"
+
+The 443 block was uncommented before certificates exist. Either:
+- Re-comment the 443 block and run certbot first, or
+- Run certbot with `--nginx` which handles the SSL lines automatically
+
 ### Database connection refused
 
 Verify PostgreSQL is listening on localhost:
@@ -248,7 +296,7 @@ sudo certbot renew --dry-run
 deploy/
   cinedrama-api.service          systemd unit (non-root, Restart=on-failure)
   nginx/
-    cinedrama-api.conf           reverse proxy config (proxy headers, gzip, rate limit)
+    cinedrama-api.conf           reverse proxy config (two-phase SSL, proxy headers, gzip, rate limit)
   scripts/
     provision-postgres.sh        PostgreSQL 16 install + DB/user/password generation
     smoke-test.sh                curl checks: health 200, 401 auth, CORS headers
