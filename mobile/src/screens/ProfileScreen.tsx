@@ -13,6 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { User, Film, LockOpen, Lock, Heart, Key, FileText, Mail, X } from 'lucide-react-native';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -62,7 +63,7 @@ export default function ProfileScreen() {
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>👤</Text>
+            <User size={36} strokeWidth={1.75} color={Colors.brand.muted} />
           </View>
           {token ? (
             <>
@@ -88,7 +89,10 @@ export default function ProfileScreen() {
         {/* Coin balance */}
         <View style={styles.coinCard}>
           <Text style={styles.coinLabel}>Coin Balance</Text>
-          <Text style={styles.coinAmount}>🪙 {token ? coinBalance : 0} coins</Text>
+          <View style={styles.coinRow}>
+            <Key size={24} strokeWidth={1.75} color={Colors.brand.text} />
+            <Text style={styles.coinAmount}>{token ? coinBalance : 0} coins</Text>
+          </View>
           {token && unlockedEpisodeIds.length > 0 && (
             <Text style={styles.unlockedText}>{unlockedEpisodeIds.length} episodes unlocked</Text>
           )}
@@ -99,18 +103,18 @@ export default function ProfileScreen() {
 
         {/* Menu items */}
         {[
-          { emoji: '🎬', label: 'My Watchlist' },
-          { emoji: '❤️', label: 'Liked Episodes' },
-          { emoji: '🔓', label: 'Unlocked Episodes' },
-          { emoji: '💎', label: 'Subscribe for Unlimited' },
-          { emoji: '🔒', label: 'Privacy Policy' },
-          { emoji: '📋', label: 'Terms of Service' },
-          { emoji: '✉️', label: 'Contact Support' },
+          { icon: <Film size={20} strokeWidth={1.75} color={Colors.brand.text} />, label: 'My Watchlist' },
+          { icon: <Heart size={20} strokeWidth={1.75} color={Colors.brand.text} />, label: 'Liked Episodes' },
+          { icon: <LockOpen size={20} strokeWidth={1.75} color={Colors.brand.text} />, label: 'Unlocked Episodes' },
+          { icon: <Lock size={20} strokeWidth={1.75} color={Colors.brand.text} />, label: 'Subscribe for Unlimited' },
+          { icon: <FileText size={20} strokeWidth={1.75} color={Colors.brand.text} />, label: 'Privacy Policy' },
+          { icon: <FileText size={20} strokeWidth={1.75} color={Colors.brand.text} />, label: 'Terms of Service' },
+          { icon: <Mail size={20} strokeWidth={1.75} color={Colors.brand.text} />, label: 'Contact Support' },
         ].map((item) => (
           <Pressable key={item.label} style={styles.menuItem}>
-            <Text style={styles.menuEmoji}>{item.emoji}</Text>
+            <View style={styles.menuIcon}>{item.icon}</View>
             <Text style={styles.menuLabel}>{item.label}</Text>
-            <Text style={styles.menuChevron}>›</Text>
+            <Text style={styles.menuChevron}>></Text>
           </Pressable>
         ))}
       </ScrollView>
@@ -127,7 +131,7 @@ export default function ProfileScreen() {
                 {mode === 'login' ? 'Sign In' : 'Create Account'}
               </Text>
               <Pressable onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+                <X size={18} strokeWidth={1.75} color={Colors.brand.muted} />
               </Pressable>
             </View>
 
@@ -208,9 +212,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
-  avatarText: {
-    fontSize: 36,
-  },
   displayName: {
     color: Colors.brand.text,
     fontSize: Typography.sizes.lg,
@@ -257,11 +258,15 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 4,
   },
+  coinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   coinAmount: {
     color: Colors.brand.text,
     fontSize: Typography.sizes['2xl'],
     fontWeight: Typography.weights.extrabold,
-    marginBottom: 4,
   },
   unlockedText: {
     color: Colors.brand.muted,
@@ -288,8 +293,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.brand.border,
   },
-  menuEmoji: {
-    fontSize: 20,
+  menuIcon: {
     marginRight: Spacing.md,
   },
   menuLabel: {
@@ -324,10 +328,6 @@ const styles = StyleSheet.create({
     color: Colors.brand.text,
     fontSize: Typography.sizes.xl,
     fontWeight: Typography.weights.extrabold,
-  },
-  modalClose: {
-    color: Colors.brand.muted,
-    fontSize: 18,
   },
   input: {
     backgroundColor: Colors.brand.dark,

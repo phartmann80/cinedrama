@@ -4,7 +4,7 @@
  * Architecture:
  *  - FlatList with pagingEnabled + snapToInterval = full screen height
  *  - Each page renders a <VideoCard> with the episode's video
- *  - Visible item tracked via onViewableItemsChanged → only the current
+ *  - Visible item tracked via onViewableItemsChanged -> only the current
  *    card plays, all others are paused (reduces memory + CPU)
  *  - Double-tap to like, tap to pause/resume
  *

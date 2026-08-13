@@ -9,21 +9,15 @@ type Database = NodePgDatabase<typeof schema>;
 let pool: pg.Pool | undefined;
 let dbInstance: Database | undefined;
 
-// Mock database for development when DATABASE_URL is not set
-function createMockDb() {
-  // This is a placeholder that allows the server to start
-  // In production, always set DATABASE_URL
-  throw new Error(
-    'DATABASE_URL must be set for production. ' +
-    'For development mock mode, use a different approach.'
-  );
-}
-
 export function getDb(): Database {
   if (!process.env.DATABASE_URL) {
-    // In development without a database, use mock mode
+    // In production, USE_MOCK_DB has NO effect - must have DATABASE_URL
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('DATABASE_URL is required in production. USE_MOCK_DB has no effect.');
+    }
+    // In development/test, allow mock mode
     if (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_DB === 'true') {
-      return createMockDb() as any;
+      throw new Error('Mock mode requires DATABASE_URL to be unset. Use real DB or remove DATABASE_URL.');
     }
     throw new Error('DATABASE_URL must be set. Did you forget to provision a database?');
   }

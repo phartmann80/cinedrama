@@ -1,8 +1,8 @@
 /**
- * PaywallScreen — Episode unlock gate
+ * PaywallScreen - Episode unlock gate
  *
  * Two unlock paths:
- *   1. Watch a rewarded ad (Google AdMob) → earn coins → auto-unlock
+ *   1. Watch a rewarded ad (Google AdMob) -> earn coins -> auto-unlock
  *      Uses react-native-google-mobile-ads with Server-Side Verification (SSV).
  *      On EARNED_REWARD the app calls POST /api/v1/user/unlock with method:'ad'.
  *   2. Spend coins directly (deducted from persisted balance via /user/unlock)
@@ -28,6 +28,7 @@ import {
   AdEventType,
 } from 'react-native-google-mobile-ads';
 import Purchases from 'react-native-purchases';
+import { Lock, LockOpen, CheckCircle, Key, X, Play } from 'lucide-react-native';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../types';
@@ -52,7 +53,7 @@ export default function PaywallScreen() {
   const canAfford = coinBalance >= episode.coinCost;
   const alreadyUnlocked = isUnlocked(episode.id);
 
-  // ─── Watch ad ───────────────────────────────────────────────────────────────
+  // -- Watch ad --
 
   async function handleWatchAd() {
     if (!token) {
@@ -119,12 +120,12 @@ export default function PaywallScreen() {
       });
 
       if (rewardEarned) {
-        // Tell the server the user earned a reward — it credits coins and
+        // Tell the server the user earned a reward - it credits coins and
         // unlocks the episode atomically.
         const res = await unlock(episode.id, 'ad');
         if (res.success) {
           Alert.alert(
-            '🎉 Episode Unlocked!',
+            'Episode Unlocked!',
             `You earned ${COIN_REWARD_FROM_AD} coins!\nNew balance: ${res.newCoinBalance ?? coinBalance} coins.`,
             [{ text: 'Watch', onPress: () => navigation.goBack() }],
           );
@@ -132,7 +133,7 @@ export default function PaywallScreen() {
           Alert.alert('Unlock Failed', res.message ?? 'Please try again.');
         }
       }
-      // else: user closed the ad before completing it — no reward, no error.
+      // else: user closed the ad before completing it - no reward, no error.
     } catch (err: any) {
       Alert.alert(
         'Ad Error',
@@ -143,7 +144,7 @@ export default function PaywallScreen() {
     }
   }
 
-  // ─── Spend coins ────────────────────────────────────────────────────────────
+  // -- Spend coins --
 
   async function handleSpendCoins() {
     if (!token) {
@@ -168,7 +169,7 @@ export default function PaywallScreen() {
       const res = await unlock(episode.id, 'coins');
       if (res.success) {
         Alert.alert(
-          'Episode Unlocked! 🎉',
+          'Episode Unlocked!',
           `New balance: ${res.newCoinBalance ?? coinBalance} coins.`,
           [{ text: 'Watch', onPress: () => navigation.goBack() }],
         );
@@ -182,7 +183,7 @@ export default function PaywallScreen() {
     }
   }
 
-  // ─── Subscribe ──────────────────────────────────────────────────────────────
+  // -- Subscribe --
 
   async function handleSubscribe() {
     setLoading(true);
@@ -198,7 +199,7 @@ export default function PaywallScreen() {
         return;
       }
 
-      // Present the first (typically only) package — RevenueCat handles the
+      // Present the first (typically only) package - RevenueCat handles the
       // native purchase sheet including trial info and pricing.
       const pkg = offering.availablePackages[0];
       const { customerInfo } = await Purchases.purchasePackage(pkg);
@@ -208,13 +209,13 @@ export default function PaywallScreen() {
 
       if (isActive) {
         Alert.alert(
-          '💎 Subscription Active!',
+          'Subscription Active!',
           'You now have unlimited access to all episodes.',
           [{ text: 'Watch', onPress: () => navigation.goBack() }],
         );
       }
     } catch (err: any) {
-      // RevenueCat throws with code 1 when the user cancels — swallow that.
+      // RevenueCat throws with code 1 when the user cancels - swallow that.
       if (err?.code !== '1' && err?.userCancelled !== true) {
         Alert.alert('Purchase Error', err?.message ?? 'Could not complete purchase. Please try again.');
       }
@@ -223,7 +224,7 @@ export default function PaywallScreen() {
     }
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // -- Render --
 
   return (
     <View style={styles.container}>
@@ -234,7 +235,7 @@ export default function PaywallScreen() {
 
       {/* Close button */}
       <Pressable style={styles.closeBtn} onPress={() => navigation.goBack()}>
-        <Text style={styles.closeBtnText}>✕</Text>
+        <X size={14} strokeWidth={1.75} color={Colors.brand.text} />
       </Pressable>
 
       <ScrollView
@@ -242,19 +243,28 @@ export default function PaywallScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Lock icon */}
-        <Text style={styles.lockEmoji}>{alreadyUnlocked ? '🔓' : '🔒'}</Text>
+        <View style={styles.lockIconContainer}>
+          {alreadyUnlocked ? (
+            <LockOpen size={56} strokeWidth={1.5} color={Colors.brand.text} />
+          ) : (
+            <Lock size={56} strokeWidth={1.5} color={Colors.brand.text} />
+          )}
+        </View>
 
         {/* Episode info */}
         <Text style={styles.dramaTitle}>{drama.title}</Text>
         <Text style={styles.episodeLabel}>
-          Episode {episode.episodeNumber} — {episode.title}
+          Episode {episode.episodeNumber} - {episode.title}
         </Text>
 
         {/* Coin balance */}
         <View style={styles.coinBadge}>
-          <Text style={styles.coinBadgeText}>
-            🪙 Your balance: {token ? coinBalance : 0} coins
-          </Text>
+          <View style={styles.coinBadgeRow}>
+            <Key size={14} strokeWidth={1.75} color={Colors.brand.text} />
+            <Text style={styles.coinBadgeText}>
+              Your balance: {token ? coinBalance : 0} coins
+            </Text>
+          </View>
         </View>
 
         {alreadyUnlocked ? (
@@ -262,9 +272,12 @@ export default function PaywallScreen() {
             style={[styles.optionCard, styles.optionCardPrimary]}
             onPress={() => navigation.goBack()}
           >
-            <Text style={[styles.optionTitle, { textAlign: 'center' }]}>
-              ▶ Watch Now
-            </Text>
+            <View style={styles.watchNowRow}>
+              <Play size={16} strokeWidth={1.75} color={Colors.brand.text} fill={Colors.brand.text} />
+              <Text style={[styles.optionTitle, { textAlign: 'center' }]}>
+                Watch Now
+              </Text>
+            </View>
           </Pressable>
         ) : (
           <>
@@ -273,7 +286,7 @@ export default function PaywallScreen() {
             {/* Option 1: Watch ad */}
             <OptionCard
               title="Watch a Short Ad"
-              subtitle={`Earn ${COIN_REWARD_FROM_AD} coins → auto-unlocks this episode`}
+              subtitle={`Earn ${COIN_REWARD_FROM_AD} coins -> auto-unlocks this episode`}
               badge="FREE"
               badgeColor={Colors.ui.success}
               onPress={handleWatchAd}
@@ -291,7 +304,7 @@ export default function PaywallScreen() {
                   ? 'Use your coin balance to unlock instantly'
                   : `You need ${episode.coinCost - coinBalance} more coins`
               }
-              badge={`${episode.coinCost} 🪙`}
+              badge={`${episode.coinCost} coins`}
               badgeColor={Colors.brand.card}
               onPress={handleSpendCoins}
               loading={loading}
@@ -304,9 +317,12 @@ export default function PaywallScreen() {
               onPress={handleSubscribe}
               disabled={loading}
             >
-              <Text style={styles.subscribeBtnText}>
-                💎 Unlimited Access — Subscribe
-              </Text>
+              <View style={styles.subscribeRow}>
+                <CheckCircle size={16} strokeWidth={1.75} color={Colors.brand.red} />
+                <Text style={styles.subscribeBtnText}>
+                  Unlimited Access - Subscribe
+                </Text>
+              </View>
               <Text style={styles.subscribeSubText}>
                 Unlock all episodes forever
               </Text>
@@ -398,17 +414,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.brand.border,
   },
-  closeBtnText: {
-    color: Colors.brand.text,
-    fontSize: 14,
-  },
   content: {
     padding: Spacing.xl,
     paddingTop: 100,
     alignItems: 'center',
   },
-  lockEmoji: {
-    fontSize: 56,
+  lockIconContainer: {
     marginBottom: Spacing.md,
   },
   dramaTitle: {
@@ -432,6 +443,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     marginBottom: Spacing.xl,
+  },
+  coinBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   coinBadgeText: {
     color: Colors.brand.text,
@@ -494,6 +510,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.xs,
     fontWeight: Typography.weights.bold,
   },
+  watchNowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   subscribeBtn: {
     width: '100%',
     borderWidth: 1,
@@ -504,6 +526,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing.sm,
     marginBottom: Spacing.lg,
+  },
+  subscribeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   subscribeBtnText: {
     color: Colors.brand.red,
