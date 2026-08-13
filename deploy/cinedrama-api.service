@@ -3,6 +3,9 @@ Description=CineDrama API Server (Express)
 Documentation=https://github.com/phartmann80/cinedrama
 After=network.target postgresql.service
 Requires=postgresql.service
+# Restart rate limiting - must be in [Unit], not [Service]
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -19,8 +22,6 @@ ExecStart=/usr/bin/node --enable-source-maps dist/index.js
 
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=3
 
 # Hardening
 NoNewPrivileges=true

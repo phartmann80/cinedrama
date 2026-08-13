@@ -8,6 +8,9 @@ const pinoHttp = pinoHttpImport as unknown as (opts: object) => RequestHandler;
 
 const app: Express = express();
 
+// Hide the Express x-powered-by header
+app.disable('x-powered-by');
+
 const allowedOrigins = (process.env.CORS_ORIGINS ?? '*').split(',').map((s) => s.trim());
 
 app.use(
@@ -33,6 +36,12 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Root route
+app.get('/', (_req, res) => {
+  res.json({ service: 'CineDrama API', status: 'ok' });
+});
+
 app.use('/api', router);
 
 export default app;
