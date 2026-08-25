@@ -8,20 +8,19 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:android": "eas build --platform android",
-    "build:apk": "eas build --platform android --profile apk"
+    "build:apk": "eas build --platform android --profile apk",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-navigation/bottom-tabs": "^6.5.20",
     "@react-navigation/native": "^6.1.17",
     "@react-navigation/native-stack": "^6.9.26",
-    "expo": "~51.0.17",
+    "expo": "~51.0.39",
     "expo-av": "~14.0.5",
-    "expo-blur": "~13.0.2",
-    "expo-haptics": "~13.0.1",
     "expo-linear-gradient": "~13.0.2",
     "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
-    "react-native": "0.74.3",
+    "react-native": "0.74.7",
     "react-native-gesture-handler": "~2.17.1",
     "react-native-google-mobile-ads": "^13.0.0",
     "react-native-purchases": "^7.27.0",
@@ -36,5 +35,11 @@
     "@types/react": "~18.2.79",
     "@types/react-native": "^0.73.0",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "^0.9.12",
+    "postcss": "^8.5.26",
+    "send": "^0.19.2",
+    "tar": "^7.5.22"
   }
 }

@@ -32,8 +32,7 @@
       }
     },
     "plugins": [
-      "expo-av",
-      "expo-blur"
+      "expo-av"
     ]
   }
 }
