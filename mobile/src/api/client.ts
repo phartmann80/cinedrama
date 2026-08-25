@@ -1,3 +1,5 @@
+import type { Drama, Episode, UnlockRequest, UnlockResponse } from '../types';
+
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:5000';
 
 async function request<T>(
@@ -23,19 +25,73 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
-// ─── Dramas ──────────────────────────────────────────────────────────────────
+/** Base URL the mobile app uses for API + media requests. */
+export function getApiBaseUrl(): string {
+  return BASE_URL;
+}
 
-import type { Drama, Episode, UnlockRequest, UnlockResponse } from '../types';
+/**
+ * The API returns signed media URLs as relative paths
+ * (e.g. `/api/v1/media/play?episodeId=...`). Resolve them against the API
+ * base so React Native's <Video> can play them against the real backend.
+ */
+export function resolveMediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function enrichDrama(drama: Drama): Drama {
+  return {
+    ...drama,
+    thumbnailUrl: resolveMediaUrl(drama.thumbnailUrl) ?? drama.thumbnailUrl,
+  };
+}
+
+function enrichEpisode(episode: Episode): Episode {
+  return {
+    ...episode,
+    videoUrl: resolveMediaUrl(episode.videoUrl),
+    thumbnailUrl: resolveMediaUrl(episode.thumbnailUrl) ?? episode.thumbnailUrl,
+  };
+}
+
+// ─── Dramas ──────────────────────────────────────────────────────────────────
 
 /** Returns the first page of dramas (up to 50). */
 export async function fetchDramas(): Promise<Drama[]> {
   const res = await request<{ data: Drama[]; meta: unknown }>('/api/v1/dramas?limit=50');
-  return res.data;
+  return res.data.map(enrichDrama);
+}
+
+/** Fetch a single drama by id. */
+export async function fetchDrama(id: string): Promise<Drama> {
+  const drama = await request<Drama>(`/api/v1/dramas/${id}`);
+  return enrichDrama(drama);
 }
 
 /** Fetch episodes for a drama. Pass the auth token to receive unlock-overlaid URLs. */
 export async function fetchEpisodes(dramaId: string, token?: string): Promise<Episode[]> {
-  return request<Episode[]>(`/api/v1/dramas/${dramaId}/episodes`, undefined, token);
+  const episodes = await request<Episode[]>(
+    `/api/v1/dramas/${dramaId}/episodes`,
+    undefined,
+    token
+  );
+  return episodes.map(enrichEpisode);
+}
+
+/** Fetch a single episode. Pass the auth token to receive a live signed URL. */
+export async function fetchEpisode(
+  dramaId: string,
+  episodeNumber: number,
+  token?: string
+): Promise<Episode> {
+  const episode = await request<Episode>(
+    `/api/v1/dramas/${dramaId}/episodes/${episodeNumber}`,
+    undefined,
+    token
+  );
+  return enrichEpisode(episode);
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

@@ -114,7 +114,7 @@ export default function ProfileScreen() {
           <Pressable key={item.label} style={styles.menuItem}>
             <View style={styles.menuIcon}>{item.icon}</View>
             <Text style={styles.menuLabel}>{item.label}</Text>
-            <Text style={styles.menuChevron}>></Text>
+            <Text style={styles.menuChevron}>{'>'}</Text>
           </Pressable>
         ))}
       </ScrollView>

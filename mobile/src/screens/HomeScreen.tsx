@@ -99,7 +99,7 @@ export default function HomeScreen() {
                   key={drama.id}
                   drama={drama}
                   onPress={() =>
-                    navigation.navigate('Feed', { dramaId: drama.id })
+                    navigation.navigate('DramaDetail', { dramaId: drama.id })
                   }
                 />
               ))}
@@ -119,7 +119,7 @@ export default function HomeScreen() {
                     key={drama.id}
                     drama={drama}
                     onPress={() =>
-                      navigation.navigate('Feed', { dramaId: drama.id })
+                      navigation.navigate('DramaDetail', { dramaId: drama.id })
                     }
                   />
                 ))}

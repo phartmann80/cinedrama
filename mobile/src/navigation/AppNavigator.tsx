@@ -12,6 +12,8 @@ import FeedScreen from '../screens/FeedScreen';
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import PaywallScreen from '../screens/PaywallScreen';
+import DramaDetailScreen from '../screens/DramaDetailScreen';
+import EpisodePlayerScreen from '../screens/EpisodePlayerScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
@@ -92,6 +94,16 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Feed" component={BottomTabs} />
+        <Stack.Screen
+          name="DramaDetail"
+          component={DramaDetailScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="EpisodePlayer"
+          component={EpisodePlayerScreen}
+          options={{ animation: 'fade' }}
+        />
         <Stack.Screen
           name="Paywall"
           component={PaywallScreen}

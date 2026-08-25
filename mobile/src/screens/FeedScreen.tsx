@@ -54,7 +54,7 @@ export default function FeedScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
 
   const viewabilityConfig = useRef({
-    itemVisibilityPercentThreshold: 60,
+    itemVisiblePercentThreshold: 60,
   }).current;
 
   const onViewableItemsChanged = useCallback(
