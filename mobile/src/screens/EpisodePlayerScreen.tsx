@@ -10,6 +10,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -32,6 +33,7 @@ import {
   Lock,
   Key,
   CheckCircle,
+  Heart,
 } from 'lucide-react-native';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { fetchDrama, fetchEpisodes } from '../api/client';
@@ -64,10 +66,12 @@ export default function EpisodePlayerScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  const [liked, setLiked] = useState(false);
 
   const videoRef = useRef<Video>(null);
   const lastTap = useRef(0);
   const statusRef = useRef<AVPlaybackStatus | null>(null);
+  const heartAnim = useRef(new Animated.Value(0)).current;
 
   const load = useCallback(async () => {
     try {
@@ -124,13 +128,27 @@ export default function EpisodePlayerScreen() {
   const handleTap = useCallback(() => {
     const now = Date.now();
     if (now - lastTap.current < DOUBLE_TAP_DELAY) {
-      // Double-tap toggles playback (common in vertical players).
-      setPaused((p) => !p);
+      // Double-tap = like (heart burst), matching VideoCard's behavior.
+      setLiked(true);
+      Animated.sequence([
+        Animated.timing(heartAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(heartAnim, {
+          toValue: 0,
+          duration: 400,
+          delay: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
     } else {
+      // Single-tap = toggle playback.
       setPaused((p) => !p);
     }
     lastTap.current = now;
-  }, []);
+  }, [heartAnim]);
 
   const handlePlaybackStatus = useCallback((status: AVPlaybackStatus) => {
     statusRef.current = status;
@@ -215,6 +233,32 @@ export default function EpisodePlayerScreen() {
           <Pause size={16} color={Colors.brand.text} />
         </Pressable>
       )}
+
+      {/* Double-tap heart burst */}
+      <Animated.View
+        style={[
+          styles.heartBurst,
+          {
+            opacity: heartAnim,
+            transform: [
+              {
+                scale: heartAnim.interpolate({
+                  inputRange: [0, 0.5, 1],
+                  outputRange: [0, 1.4, 1],
+                }),
+              },
+            ],
+          },
+        ]}
+        pointerEvents="none"
+      >
+        <Heart
+          size={80}
+          strokeWidth={1.5}
+          color={Colors.brand.red}
+          fill={liked ? Colors.brand.red : 'none'}
+        />
+      </Animated.View>
 
       {/* Top gradient */}
       <LinearGradient
@@ -387,6 +431,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  heartBurst: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '40%',
   },
   topGradient: {
     position: 'absolute',
