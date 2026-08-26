@@ -75,35 +75,60 @@ Override env before running if needed (all defaults are correct for prod):
 
 ## 3. Nginx + Certbot — run as root
 
-### 3a. Install nginx + certbot
+Prototype flow: **prepare everything before the DNS flip; only the tiny
+certbot+reload runs after it.** This keeps the plain-HTTP window to a few
+seconds and never leaves the site down.
+
+### 3a. Phase A — BEFORE DNS flip (prepare, no domain traffic expected)
+
 ```bash
+# Install nginx + certbot + rsync
 sudo apt-get update
 sudo apt-get install -y nginx certbot python3-certbot-nginx
+
+# Web challenge/webroot + app/download dirs
+sudo mkdir -p /var/www/html /opt/cinedrama/downloads
+
+# Export the NEXT_PUBLIC values used at build (already the script defaults,
+# but set explicitly so the shell below is self-contained):
+export NEXT_PUBLIC_APK_URL="https://cinedrama.app/download/cinedrama-latest.apk"
+export NEXT_PUBLIC_API_BASE_URL="https://api.cinedrama.app"
 ```
 
-### 3b. Temporary ACME-only vhost (to obtain certs safely)
-Create a temporary site that only answers ACME challenges. Do **not** install
-the full vhost yet — its 443 block references cert paths that don't exist yet.
+**Stage all config files (NOT yet enabled):**
 
 ```bash
-cat > /etc/nginx/sites-available/cinedrama-acme.conf <<'EOF'
+# 1) Final web vhost (references cert paths that don't exist yet — keep disabled)
+sudo install -m 644 /opt/cinedrama/source/deploy/nginx/cinedrama-web.conf \
+  /etc/nginx/sites-available/cinedrama-web.conf
+
+# 2) ACME bootstrap vhost (only HTTP challenge; returns 503 elsewhere)
+sudo tee /etc/nginx/sites-available/cinedrama-acme.conf >/dev/null <<'EOF'
 server {
     listen 80;
     server_name cinedrama.app www.cinedrama.app;
     location /.well-known/acme-challenge/ { root /var/www/html; }
-    location / { return 200 "ACME bootstrap"; }
+    location / { return 503 "CineDrama provisioning in progress"; }
 }
 EOF
-sudo ln -sf /etc/nginx/sites-available/cinedrama-acme.conf /etc/nginx/sites-enabled/cinedrama-acme.conf
-# Ensure no other cinedrama site is enabled yet
+```
+
+Now test the **ACME config** without touching the live sites (it's the only
+enabled CineDrama site for now):
+
+```bash
 sudo rm -f /etc/nginx/sites-enabled/cinedrama-web.conf
-sudo mkdir -p /var/www/html
+sudo ln -sf /etc/nginx/sites-available/cinedrama-acme.conf /etc/nginx/sites-enabled/cinedrama-acme.conf
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### 3c. Obtain certificates (ONLY after DNS `cinedrama.app`/`www` → `31.70.107.44`)
-Replace `YOU@example.com` with your real email (this is a non-secret email used
-for Let's Encrypt expiry notices; Certbot requires it).
+> At this point the server serves 503 on cinedrama.app if anyone hits it,
+> and is ready to answer ACME the instant DNS points here.
+
+### 3b. Phase B — AT DNS flip (Paul flips `cinedrama.app`/`www` → `31.70.107.44`)
+
+Run immediately (a few seconds). Email `YOU@example.com` is required by
+Certbot; use your real Let's Encrypt contact.
 
 ```bash
 sudo certbot certonly --webroot -w /var/www/html \
@@ -111,24 +136,33 @@ sudo certbot certonly --webroot -w /var/www/html \
   --non-interactive --agree-tos -m YOU@example.com --keep-until-expiring
 ```
 
-If certbot succeeds, it writes:
-`/etc/letsencrypt/live/cinedrama.app/fullchain.pem` and `privkey.pem`.
+If it succeeds it writes `/etc/letsencrypt/live/cinedrama.app/fullchain.pem`
+and `privkey.pem`.
 
-### 3d. Enable the full web vhost
+### 3c. Phase C — activate HTTPS (immediately after certbot)
+
 ```bash
-sudo install -m 644 /opt/cinedrama/source/deploy/nginx/cinedrama-web.conf \
-  /etc/nginx/sites-available/cinedrama-web.conf
 sudo ln -sf /etc/nginx/sites-available/cinedrama-web.conf /etc/nginx/sites-enabled/cinedrama-web.conf
 sudo rm -f /etc/nginx/sites-enabled/cinedrama-acme.conf
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-The active vhost now: redirects HTTP→HTTPS, serves the Next.js app from
+The final vhost now redirects HTTP→HTTPS, serves Next.js from
 `127.0.0.1:3000`, proxies `/api/` → `127.0.0.1:5000`, and serves `/download/`
 from `/opt/cinedrama/downloads/`.
 
-> If you also want the API domain later, install `cinedrama-api.conf` the same
-> way (that keeps `api.cinedrama.app`).
+### Optional after the fact
+- Set auto-renewal hook so renewals reload nginx:
+  ```bash
+  sudo systemctl enable --now certbot.timer
+  sudo tee /etc/letsencrypt/renewal-hooks/deploy/nginx-reload <<'EOF'
+  #!/bin/sh
+  systemctl reload nginx
+  EOF
+  sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/nginx-reload
+  ```
+- If you also want the API domain later, install `cinedrama-api.conf` the same
+  way (it keeps `api.cinedrama.app`).
 
 ---
 
