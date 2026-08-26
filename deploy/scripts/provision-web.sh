@@ -18,41 +18,46 @@ set -euo pipefail
 API_BASE_URL="${API_BASE_URL:-https://api.cinedrama.app}"
 APK_URL="${APK_URL:-https://cinedrama.app/download/cinedrama-latest.apk}"
 APP_PATH="/opt/cinedrama/web"
+APP_STAGING="${APP_PATH}-deploy"
 ENV_FILE="/etc/cinedrama/web.env"
 SERVICE_FILE="deploy/cinedrama-web.service"
 SERVICE_DEST="/etc/systemd/system/cinedrama-web.service"
 PORT="${PORT:-3000}"
+# The SSH user that runs deploy-web.sh. Must match WEB_DEPLOY_USER in that
+# script. This is the user granted the scoped NOPASSWD sudoers rule.
+WEB_DEPLOY_USER="${WEB_DEPLOY_USER:-deploy}"
+SUDOERS_FILE="/etc/sudoers.d/cinedrama-web"
 
 echo "=== CineDrama Web provisioning ==="
 
 # --- 1. Ensure system user exists ---
 if ! id -u cinedrama &> /dev/null; then
-  echo "[1/6] Creating cinedrama system user..."
+  echo "[1/8] Creating cinedrama system service user..."
   useradd --system --no-create-home --shell /usr/sbin/nologin cinedrama
 else
-  echo "[1/6] cinedrama user already exists."
+  echo "[1/8] cinedrama user already exists."
 fi
 
 # --- 2. Ensure Node.js 20 is present ---
-echo "[2/6] Checking Node.js..."
+echo "[2/8] Checking Node.js..."
 if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
   echo "    Node.js 20+ not found. Install Node 20 (e.g. nodesource/nvm) before continuing."
   exit 1
 fi
 echo "    Node $(node -v)"
 
-# --- 3. Create app directory ---
-echo "[3/6] Creating ${APP_PATH}..."
-mkdir -p "${APP_PATH}"
+# --- 3. Create app + staging directories ---
+echo "[3/8] Creating ${APP_PATH} and ${APP_STAGING}..."
+mkdir -p "${APP_PATH}" "${APP_STAGING}"
 chown -R cinedrama:cinedrama /opt/cinedrama
 
 # --- 4. Create APK download directory ---
-echo "[4/6] Creating /opt/cinedrama/downloads..."
+echo "[4/8] Creating /opt/cinedrama/downloads..."
 mkdir -p /opt/cinedrama/downloads
 chown -R cinedrama:cinedrama /opt/cinedrama/downloads
 
 # --- 5. Write runtime env file ---
-echo "[5/6] Writing ${ENV_FILE}..."
+echo "[5/8] Writing ${ENV_FILE}..."
 mkdir -p /etc/cinedrama
 cat > "${ENV_FILE}" <<EOF
 # /etc/cinedrama/web.env
@@ -67,7 +72,7 @@ chown cinedrama:cinedrama "${ENV_FILE}"
 chmod 0600 "${ENV_FILE}"
 
 # --- 6. Install systemd service ---
-echo "[6/6] Installing cinedrama-web.service..."
+echo "[6/8] Installing cinedrama-web.service..."
 if [ -f "${SERVICE_FILE}" ]; then
   install -m 0644 "${SERVICE_FILE}" "${SERVICE_DEST}"
 else
@@ -77,10 +82,36 @@ fi
 systemctl daemon-reload
 systemctl enable cinedrama-web
 
+# --- 7. Scoped sudoers for the deploy user ---
+echo "[7/8] Installing scoped sudoers for ${WEB_DEPLOY_USER}..."
+if ! id -u "${WEB_DEPLOY_USER}" &> /dev/null; then
+  echo "    WARN: deploy user '${WEB_DEPLOY_USER}' does not exist yet."
+  echo "    Create it AND run this script again to install the sudoers rule."
+else
+  cat > "${SUDOERS_FILE}" <<EOF
+# CineDrama web deploy — scoped to exactly the web restart/status commands.
+# Installed by provision-web.sh. Do NOT broaden.
+${WEB_DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart cinedrama-web
+${WEB_DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl status cinedrama-web
+EOF
+  chmod 0440 "${SUDOERS_FILE}"
+  if visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1; then
+    echo "    sudoers rule valid for ${WEB_DEPLOY_USER}."
+  else
+    echo "    ERROR: sudoers validation failed for ${SUDOERS_FILE}."
+    exit 1
+  fi
+fi
+
+# --- 8. Summary ---
+echo "[8/8] Done."
+
 echo ""
 echo "=== Provisioning complete ==="
-echo "App dir:  ${APP_PATH}"
-echo "Env file: ${ENV_FILE} (mode 0600)"
+echo "App dir:    ${APP_PATH}"
+echo "Staging:    ${APP_STAGING}"
+echo "Env file:   ${ENV_FILE} (mode 0600)"
+echo "Deploy user: ${WEB_DEPLOY_USER} (must match WEB_DEPLOY_USER in deploy-web.sh)"
 echo ""
 echo "Next steps:"
 echo "  1. bash deploy/scripts/deploy-web.sh   # builds + deploys code"

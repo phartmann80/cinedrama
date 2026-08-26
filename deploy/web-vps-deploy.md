@@ -102,15 +102,33 @@ installs the systemd service (`cinedrama-web`). It does **not** deploy code.
 deploy/scripts/deploy-web.sh
 ```
 
-It:
+It builds in a **staging directory** and promotes only after success, so the
+live app keeps serving the old tree during install/build:
+
+- Live: `/opt/cinedrama/web`
+- Staging: `/opt/cinedrama/web-deploy`
+
+Steps:
 1. Reads non-secret config from env (`WEB_DEPLOY_HOST`, `WEB_DEPLOY_USER`,
    `WEB_DEPLOY_PATH`, optional `WEB_DEPLOY_PORT`, `NEXT_PUBLIC_APK_URL`,
    `NEXT_PUBLIC_API_BASE_URL`).
-2. rsyncs `web/` up to `/opt/cinedrama/web` (excludes `node_modules`, `.next`,
+2. rsyncs `web/` into the **staging** dir (excludes `node_modules`, `.next`,
    `.env*`).
-3. SSHes: `npm ci`, builds with `NEXT_PUBLIC_*`, then
-   `systemctl restart cinedrama-web`.
-4. Runs `smoke-test-web.sh` against the target host.
+3. SSHes: `npm ci` + `npm run build` **in staging** with `NEXT_PUBLIC_*`.
+4. Only after a successful build, rsyncs the built staging tree over the live
+   dir, then `systemctl restart cinedrama-web`.
+5. Runs `smoke-test-web.sh` against the target host.
+
+`set -euo pipefail` means a failed build **aborts before the restart step** —
+the old live tree stays intact and serving. A failed promotion also aborts
+before restart, so you never restart onto a broken tree.
+
+**Sudo:** `deploy-web.sh` runs `sudo systemctl restart/status cinedrama-web`.
+`provision-web.sh` installs a scoped NOPASSWD sudoers rule for exactly those
+two commands (`/etc/sudoers.d/cinedrama-web`) for the `WEB_DEPLOY_USER`
+(default `deploy`). Make sure that username matches the SSH user and that it
+is an interactive/SSH-capable user (the `cinedrama` service user has
+`nologin`).
 
 If you prefer building in CI and only shipping `.next` + `package.json`
 dependencies, use the optional GitHub Actions template. **Credentials live as
