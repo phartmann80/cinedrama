@@ -1,0 +1,38 @@
+[Unit]
+Description=CineDrama Web (Next.js)
+Documentation=https://github.com/phartmann80/cinedrama
+After=network.target
+# Restart rate limiting - must be in [Unit], not [Service]
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=cinedrama
+Group=cinedrama
+
+# Single app directory keeps the API+web layout simple:
+#   /opt/cinedrama/web
+WorkingDirectory=/opt/cinedrama/web
+EnvironmentFile=/etc/cinedrama/web.env
+
+# Bind to loopback only; Nginx owns public access + TLS. The env file sets PORT.
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p ${PORT}
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/cinedrama/web
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cinedrama-web
+
+[Install]
+WantedBy=multi-user.target
