@@ -23,7 +23,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, Lock, Share2, Key, Pause } from 'lucide-react-native';
+import { Heart, Lock, Share2, Key, Pause, Info } from 'lucide-react-native';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import type { Episode, Drama, RootStackParamList } from '../types';
 
@@ -167,6 +167,13 @@ export default function VideoCard({ episode, drama, isActive, height }: Props) {
             icon={<Share2 size={28} strokeWidth={1.75} color={Colors.brand.white} />}
             label="Share"
             onPress={() => Alert.alert('Share', 'Share link copied!')}
+          />
+
+          {/* Series details */}
+          <ActionButton
+            icon={<Info size={28} strokeWidth={1.75} color={Colors.brand.white} />}
+            label="Details"
+            onPress={() => navigation.navigate('DramaDetail', { dramaId: drama.id })}
           />
 
           {/* Coin unlock */}

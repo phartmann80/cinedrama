@@ -46,7 +46,8 @@ export interface UnlockResponse {
 
 export type RootStackParamList = {
   Feed: { dramaId?: string; startEpisode?: number };
-  EpisodeDetail: { episode: Episode; drama: Drama };
+  DramaDetail: { dramaId: string };
+  EpisodePlayer: { dramaId: string; episodeNumber: number };
   Home: undefined;
   Profile: undefined;
   Paywall: { episode: Episode; drama: Drama };
