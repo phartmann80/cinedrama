@@ -47,10 +47,18 @@ check "GET /privacy returns HTTP 200" "200" "$(curl -s -o /dev/null -w '%{http_c
 check "GET /terms returns HTTP 200" "200" "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/terms")"
 
 echo "[3/5] Preview teaser"
-PREVIEW_CODE="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/download/previews/billionaire-s-revenge.mp4")"
-PREVIEW_TYPE="$(curl -s -o /dev/null -w '%{content_type}' "${BASE_URL}/download/previews/billionaire-s-revenge.mp4")"
-check "GET /download/previews/billionaire-s-revenge.mp4 returns HTTP 200" "200" "${PREVIEW_CODE}"
-check "preview Content-Type is video/mp4" "video/mp4" "${PREVIEW_TYPE}"
+# Previews are served by Nginx (/download/previews/), NOT by Next.js, so they
+# can only be validated against the public/proxied host. On a loopback target
+# (Next on :3000 before Nginx) this is informational and skipped.
+if echo "${BASE_URL}" | grep -Eq '^https?://(127\.0\.0\.1|localhost)(:|/|$)'; then
+  PREVIEW_CODE="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/download/previews/billionaire-s-revenge.mp4")"
+  echo "  SKIP: preview check on loopback (got ${PREVIEW_CODE}); served by Nginx on the public host"
+else
+  PREVIEW_CODE="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/download/previews/billionaire-s-revenge.mp4")"
+  PREVIEW_TYPE="$(curl -s -o /dev/null -w '%{content_type}' "${BASE_URL}/download/previews/billionaire-s-revenge.mp4")"
+  check "GET /download/previews/billionaire-s-revenge.mp4 returns HTTP 200" "200" "${PREVIEW_CODE}"
+  check "preview Content-Type is video/mp4" "video/mp4" "${PREVIEW_TYPE}"
+fi
 
 echo "[4/5] APK download (upload → 200; not yet → 404 is informational)"
 APK_CODE="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/download/cinedrama-latest.apk")"

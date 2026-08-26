@@ -218,10 +218,11 @@ Run these **after** the service is up. Local checks work immediately; public
 checks only become meaningful once DNS is flipped to `31.70.107.44`.
 
 ```bash
-# Local (server-side, after deploy)
+# Local (server-side, after deploy). The /download/previews/ check is
+# informational/skipped on loopback because Nginx serves those, not Next.js.
 bash /opt/cinedrama/source/deploy/scripts/smoke-test-web.sh http://127.0.0.1:3000
 
-# Public (after DNS flip + certbot)
+# Public (after DNS flip + certbot) — enforces /download/previews/ = 200 video/mp4
 curl -s -o /dev/null -w "GET /                            → %{http_code}\n" https://cinedrama.app/
 curl -s -o /dev/null -w "GET /privacy                     → %{http_code}\n" https://cinedrama.app/privacy
 curl -s -o /dev/null -w "GET /terms                       → %{http_code}\n" https://cinedrama.app/terms
