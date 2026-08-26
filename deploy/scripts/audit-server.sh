@@ -62,9 +62,13 @@ echo "  Uptime:        $(uptime -p 2>/dev/null || echo unknown)"
 
 echo ""
 echo "[2] Resources"
-echo "  CPU: $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | sed 's/^[^:]*: //' || echo unknown) x$(nproc 2>/dev/null || echo '?')"
-echo "  Memory: $(free -h 2>/dev/null | awk '/Mem:/{print $2" total, "$3" used, "$4" available"} || echo unknown)"
-echo "  Disk: $(df -h / 2>/dev/null | tail -1 | awk '{print "root "$2" total, "$3" used, "$4" avail ("$5"%)"} || echo unknown)"
+cpu_model="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | sed 's/^[^:]*: //' || true)"
+cpu_count="$(nproc 2>/dev/null || echo '?')"
+mem_line="$(free -h 2>/dev/null | awk '/Mem:/ {print $2, $3, $4}' || true)"
+disk_line="$(df -h / 2>/dev/null | awk 'NR==2 {print $2, $3, $4, $5}' || true)"
+echo "  CPU: ${cpu_model:-unknown} x${cpu_count:-?}"
+echo "  Memory: ${mem_line:-unknown}"
+echo "  Disk: ${disk_line:-unknown}"
 
 echo ""
 echo "[3] Node.js runtime"
@@ -122,7 +126,8 @@ if command -v ufw >/dev/null 2>&1; then
 else
   echo "  ufw: <not installed>"
 fi
-echo "  iptables rules: $(iptables -S 2>/dev/null | wc -l || echo '?')"
+iptables_rules="$( (iptables -S 2>/dev/null || true) | wc -l )"
+echo "  iptables rules: ${iptables_rules}"
 echo "  fail2ban: $(command -v fail2ban-client >/dev/null 2>&1 && echo 'installed' || echo 'not installed')"
 
 if [ "${WITH_APT_UPDATE}" -eq 1 ]; then
