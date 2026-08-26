@@ -23,7 +23,8 @@
 #   - The systemd service user must have nologin; never use it as the deploy
 #     SSH user.
 #
-# Build/deploy code separately with deploy/scripts/deploy-web.sh.
+# Build/deploy code separately with deploy/scripts/deploy-web.sh (over SSH) or
+# deploy/scripts/deploy-web-local.sh (run directly on the VPS).
 #
 set -euo pipefail
 
@@ -59,12 +60,17 @@ else
   echo "[1/8] cinedrama user already exists."
 fi
 
-# --- 2. Ensure Node.js 20 is present ---
-echo "[2/8] Checking Node.js..."
+# --- 2. Ensure Node.js 20 is present (install via NodeSource on clean boxes) ---
+echo "[2/8] Ensuring Node.js 20..."
 if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
-  echo "    Node.js 20+ not found. Install Node 20 (e.g. nodesource/nvm) before continuing."
-  exit 1
+  echo "    Node.js 20+ not found. Installing Node 20 via NodeSource..."
+  apt-get update -qq
+  apt-get install -y -qq curl ca-certificates gnupg rsync
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
 fi
+# rsync is used by the local deploy script; ensure it exists regardless.
+command -v rsync >/dev/null 2>&1 || apt-get install -y -qq rsync
 echo "    Node $(node -v)"
 
 # --- 3. Shared deploy group + app/staging directories ---
