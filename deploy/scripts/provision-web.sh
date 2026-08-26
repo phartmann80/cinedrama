@@ -6,10 +6,22 @@
 #   sudo bash deploy/scripts/provision-web.sh
 #
 # DOES NOT deploy application code. It creates:
-#   - /opt/cinedrama/web            app directory
-#   - /etc/cinedrama/web.env        runtime env file (mode 0600, cinedrama)
-#   - /etc/systemd/system/cinedrama-web.service -> deploy/cinedrama-web.service
-#   - enables cinedrama-web
+#   - /opt/cinedrama/web                live app dir (systemd: cinedrama-web)
+#   - /opt/cinedrama/web-deploy         staging dir for deploy-web.sh
+#   - shared deploy group 'cinedramadeploy' with group-write on live+staging
+#   - /etc/cinedrama/web.env            runtime env file (mode 0600, cinedrama)
+#   - /etc/systemd/system/cinedrama-web.service
+#   - scoped NOPASSWD sudoers rule for the deploy user (restart only)
+#
+# Ownership model (consistency requirement between provision + deploy):
+#   - Service user `cinedrama` owns the files (uid cinedrama), group
+#     cinedramadeploy.
+#   - The SSH deploy user (WEB_DEPLOY_USER, default `deploy`) is a member of
+#     cinedramadeploy, which has group write on live + staging. That lets it
+#     build in staging and promote to live, while `cinedrama` only needs
+#     read+execute to serve.
+#   - The systemd service user must have nologin; never use it as the deploy
+#     SSH user.
 #
 # Build/deploy code separately with deploy/scripts/deploy-web.sh.
 #
@@ -23,16 +35,25 @@ ENV_FILE="/etc/cinedrama/web.env"
 SERVICE_FILE="deploy/cinedrama-web.service"
 SERVICE_DEST="/etc/systemd/system/cinedrama-web.service"
 PORT="${PORT:-3000}"
-# The SSH user that runs deploy-web.sh. Must match WEB_DEPLOY_USER in that
-# script. This is the user granted the scoped NOPASSWD sudoers rule.
+DEPLOY_GROUP="cinedramadeploy"
 WEB_DEPLOY_USER="${WEB_DEPLOY_USER:-deploy}"
 SUDOERS_FILE="/etc/sudoers.d/cinedrama-web"
 
-echo "=== CineDrama Web provisioning ==="
+# Guard: the deploy SSH user must be an interactive/SSH-capable username, never
+# the nologin service account.
+if [ "${WEB_DEPLOY_USER}" = "cinedrama" ]; then
+  echo "ERROR: WEB_DEPLOY_USER cannot be 'cinedrama' (it is the nologin service user)."
+  echo "       Set WEB_DEPLOY_USER to a real SSH account, e.g. deploy."
+  exit 1
+fi
 
-# --- 1. Ensure system user exists ---
+echo "=== CineDrama Web provisioning ==="
+echo "  deploy user: ${WEB_DEPLOY_USER}"
+echo "  group:       ${DEPLOY_GROUP}"
+
+# --- 1. Ensure service user exists ---
 if ! id -u cinedrama &> /dev/null; then
-  echo "[1/8] Creating cinedrama system service user..."
+  echo "[1/8] Creating cinedrama service user..."
   useradd --system --no-create-home --shell /usr/sbin/nologin cinedrama
 else
   echo "[1/8] cinedrama user already exists."
@@ -46,15 +67,37 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.spli
 fi
 echo "    Node $(node -v)"
 
-# --- 3. Create app + staging directories ---
-echo "[3/8] Creating ${APP_PATH} and ${APP_STAGING}..."
-mkdir -p "${APP_PATH}" "${APP_STAGING}"
-chown -R cinedrama:cinedrama /opt/cinedrama
+# --- 3. Shared deploy group + app/staging directories ---
+echo "[3/8] Creating shared deploy group '${DEPLOY_GROUP}' + dirs..."
+if ! getent group "${DEPLOY_GROUP}" >/dev/null 2>&1; then
+  groupadd --system "${DEPLOY_GROUP}"
+fi
+# Ensure service user is in the shared group.
+if ! id -nG cinedrama | tr ' ' '\n' | grep -qx "${DEPLOY_GROUP}"; then
+  usermod -aG "${DEPLOY_GROUP}" cinedrama
+fi
+# Create the SSH deploy user if it does not exist (home + bash so it can SSH).
+if ! id -u "${WEB_DEPLOY_USER}" &> /dev/null; then
+  echo "    Creating deploy user '${WEB_DEPLOY_USER}' (home + bash)..."
+  useradd --create-home --shell /bin/bash "${WEB_DEPLOY_USER}"
+fi
+if ! id -nG "${WEB_DEPLOY_USER}" | tr ' ' '\n' | grep -qx "${DEPLOY_GROUP}"; then
+  usermod -aG "${DEPLOY_GROUP}" "${WEB_DEPLOY_USER}"
+fi
 
-# --- 4. Create APK download directory ---
-echo "[4/8] Creating /opt/cinedrama/downloads..."
+mkdir -p "${APP_PATH}" "${APP_STAGING}"
+# cinedrama owns the files; group is cinedramadeploy with write so the deploy
+# user (same group) can build/promote. The service user only needs read+exec.
+chown -R "cinedrama:${DEPLOY_GROUP}" "${APP_PATH}" "${APP_STAGING}"
+chmod -R "g+rwX" "${APP_PATH}" "${APP_STAGING}"
+# setgid on directories: new files/dirs inherit the cinedramadeploy group.
+find "${APP_PATH}" "${APP_STAGING}" -type d -exec chmod g+s {} \;
+
+# --- 4. APK download directory ---
+echo "[4/8] Creating /opt/cinedrama/downloads (readable by nginx)..."
 mkdir -p /opt/cinedrama/downloads
 chown -R cinedrama:cinedrama /opt/cinedrama/downloads
+find /opt/cinedrama/downloads -type d -exec chmod 755 {} \;
 
 # --- 5. Write runtime env file ---
 echo "[5/8] Writing ${ENV_FILE}..."
@@ -82,25 +125,20 @@ fi
 systemctl daemon-reload
 systemctl enable cinedrama-web
 
-# --- 7. Scoped sudoers for the deploy user ---
+# --- 7. Scoped sudoers (restart ONLY; exact command match) ---
 echo "[7/8] Installing scoped sudoers for ${WEB_DEPLOY_USER}..."
-if ! id -u "${WEB_DEPLOY_USER}" &> /dev/null; then
-  echo "    WARN: deploy user '${WEB_DEPLOY_USER}' does not exist yet."
-  echo "    Create it AND run this script again to install the sudoers rule."
-else
-  cat > "${SUDOERS_FILE}" <<EOF
-# CineDrama web deploy — scoped to exactly the web restart/status commands.
+cat > "${SUDOERS_FILE}" <<EOF
+# CineDrama web deploy — scoped to EXACTLY the restart command used by
+# deploy-web.sh. Status/is-active is unprivileged, so no sudo is needed there.
 # Installed by provision-web.sh. Do NOT broaden.
 ${WEB_DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart cinedrama-web
-${WEB_DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl status cinedrama-web
 EOF
-  chmod 0440 "${SUDOERS_FILE}"
-  if visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1; then
-    echo "    sudoers rule valid for ${WEB_DEPLOY_USER}."
-  else
-    echo "    ERROR: sudoers validation failed for ${SUDOERS_FILE}."
-    exit 1
-  fi
+chmod 0440 "${SUDOERS_FILE}"
+if visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1; then
+  echo "    sudoers rule valid for ${WEB_DEPLOY_USER}."
+else
+  echo "    ERROR: sudoers validation failed for ${SUDOERS_FILE}."
+  exit 1
 fi
 
 # --- 8. Summary ---
@@ -111,9 +149,11 @@ echo "=== Provisioning complete ==="
 echo "App dir:    ${APP_PATH}"
 echo "Staging:    ${APP_STAGING}"
 echo "Env file:   ${ENV_FILE} (mode 0600)"
+echo "Group:      ${DEPLOY_GROUP} (cinedrama + ${WEB_DEPLOY_USER})"
 echo "Deploy user: ${WEB_DEPLOY_USER} (must match WEB_DEPLOY_USER in deploy-web.sh)"
 echo ""
 echo "Next steps:"
-echo "  1. bash deploy/scripts/deploy-web.sh   # builds + deploys code"
-echo "  2. Copy the nginx vhost and run certbot (see deploy/web-vps-deploy.md)"
-echo "  3. systemctl status cinedrama-web"
+echo "  1. Install the deploy public key into ${WEB_DEPLOY_USER}'s authorized_keys"
+echo "  2. bash deploy/scripts/deploy-web.sh   # builds + deploys code"
+echo "  3. Copy the nginx vhost and run certbot (see deploy/web-vps-deploy.md)"
+echo "  4. systemctl is-active cinedrama-web"

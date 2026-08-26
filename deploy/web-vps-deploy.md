@@ -123,12 +123,25 @@ Steps:
 the old live tree stays intact and serving. A failed promotion also aborts
 before restart, so you never restart onto a broken tree.
 
-**Sudo:** `deploy-web.sh` runs `sudo systemctl restart/status cinedrama-web`.
-`provision-web.sh` installs a scoped NOPASSWD sudoers rule for exactly those
-two commands (`/etc/sudoers.d/cinedrama-web`) for the `WEB_DEPLOY_USER`
-(default `deploy`). Make sure that username matches the SSH user and that it
-is an interactive/SSH-capable user (the `cinedrama` service user has
-`nologin`).
+**Promote runs on the VPS.** The staging → live move is a single `ssh`
+command running `rsync -a --delete` locally on the VPS (`rsync` cannot
+copy remote→remote in one invocation).
+
+**Ownership / permissions (shared group):**
+- `provision-web.sh` creates a system group `cinedramadeploy`.
+- Service user `cinedrama` owns the live + staging files; group is
+  `cinedramadeploy` with group-write + setgid on the directories.
+- The SSH deploy user (`WEB_DEPLOY_USER`, default `deploy`) is added to
+  `cinedramadeploy`, so it can write/build/promote in both dirs while
+  `cinedrama` only needs read+execute to serve.
+- Never use `cinedrama` as the deploy SSH user (it is `nologin`);
+  `provision-web.sh` fails fast if you try.
+
+**Sudo:** `deploy-web.sh` runs exactly one privileged command:
+`sudo systemctl restart cinedrama-web`. The status check is unprivileged
+(`systemctl is-active cinedrama-web`), so no sudo is needed for it.
+`provision-web.sh` installs the matching NOPASSWD rule (`/etc/sudoers.d/
+cinedrama-web`) scoped to exactly that command for the `WEB_DEPLOY_USER`.
 
 If you prefer building in CI and only shipping `.next` + `package.json`
 dependencies, use the optional GitHub Actions template. **Credentials live as

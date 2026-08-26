@@ -24,9 +24,10 @@
 #
 # Required env:
 #   WEB_DEPLOY_HOST    target VPS host/IP
-#   WEB_DEPLOY_USER    SSH user (default: cinedrama; must have NOPASSWD sudo for
-#                      `systemctl restart/status cinedrama-web` — see
-#                      provision-web.sh)
+#   WEB_DEPLOY_USER    SSH user (default: deploy; MUST be a member of the shared
+#                      'cinedramadeploy' group with write on the live/staging
+#                      dirs and have NOPASSWD sudo for exactly
+#                      `systemctl restart cinedrama-web` — see provision-web.sh)
 # Optional env:
 #   WEB_DEPLOY_PORT    SSH port (default: 22)
 #   WEB_DEPLOY_PATH    live app path on VPS (default: /opt/cinedrama/web)
@@ -86,18 +87,19 @@ ssh "${SSH_OPTS[@]}" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}" \
    NEXT_PUBLIC_API_BASE_URL='${NEXT_PUBLIC_API_BASE_URL}' \
    npm run build"
 
-# --- 3. Promote staging -> live (only after build succeeded) ---
-echo "[3/5] Promoting staging tree to live ${WEB_DEPLOY_PATH}..."
-rsync -az --delete \
-  -e "${RSH}" \
-  --exclude '.env*' \
-  "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}:${WEB_DEPLOY_STAGING}/" \
-  "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}:${WEB_DEPLOY_PATH}/"
+# --- 3. Promote staging -> live (ON THE VPS; only after build succeeded) ---
+# rsync cannot copy remote->remote in one command, so the promote runs over
+# SSH as a single local rsync on the VPS. Runs only after the build succeeded
+# (set -euo pipefail aborts above otherwise), so the live service is never
+# touched by a failed build.
+echo "[3/5] Promoting staging tree to live ${WEB_DEPLOY_PATH} on the VPS..."
+ssh "${SSH_OPTS[@]}" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}" \
+  "rsync -a --delete --exclude '.env*' '${WEB_DEPLOY_STAGING}/' '${WEB_DEPLOY_PATH}/'"
 
 # --- 4. Restart service (aborts above if build failed) ---
 echo "[4/5] Restarting cinedrama-web..."
 ssh "${SSH_OPTS[@]}" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}" \
-  "sudo systemctl restart cinedrama-web && sudo systemctl --no-pager status cinedrama-web --lines=0"
+  "sudo systemctl restart cinedrama-web && systemctl is-active cinedrama-web"
 
 # --- 5. Smoke test ---
 echo "[5/5] Smoke test..."
