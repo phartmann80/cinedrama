@@ -57,6 +57,11 @@ else
   SUDO="sudo"
 fi
 
+# Group-friendly umask: when the deploy user (non-root) creates files they are
+# group-writable, so the `cinedrama` service user (in cinedramadeploy) can write
+# .next/cache without root re-chown.
+umask 0002
+
 echo "=== CineDrama Web deploy (LOCAL/on-server) ==="
 echo "  Source:   ${WEB_SRC}"
 echo "  Staging:  ${WEB_DEPLOY_STAGING}"
@@ -105,8 +110,19 @@ echo "[2/5] npm ci + build in staging..."
 echo "[3/5] Promoting staging -> live ${WEB_DEPLOY_PATH}..."
 rsync -a --delete --exclude '.env*' "${WEB_DEPLOY_STAGING}/" "${WEB_DEPLOY_PATH}/"
 
+# Fix ownership/perms after promotion so the `cinedrama` service user can write
+# .next/cache. When run as root we chown; either way we set group-write so the
+# cinedramadeploy group (which cinedrama belongs to) can write new cache files.
+if [ "$(id -u)" -eq 0 ]; then
+  chown -R "cinedrama:cinedramadeploy" "${WEB_DEPLOY_PATH}" "${WEB_DEPLOY_STAGING}"
+fi
+chmod -R "g+rwX" "${WEB_DEPLOY_PATH}" "${WEB_DEPLOY_STAGING}"
+
 # --- 4. Restart service ---
 echo "[4/5] Restarting cinedrama-web..."
+# Clear a previous "start request repeated too quickly" state if it exists;
+# a build is fine but the unit had failed-start throttling.
+${SUDO} systemctl reset-failed cinedrama-web || true
 ${SUDO} systemctl restart cinedrama-web
 ${SUDO} systemctl is-active cinedrama-web
 

@@ -79,9 +79,11 @@ rsync -az --delete \
   "${WEB_DIR}/" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}:${WEB_DEPLOY_STAGING}/"
 
 # --- 2. Install + build in staging ---
+# umask 0002: files created by the deploy user are group-writable so the
+# `cinedrama` service user (in cinedramadeploy) can write .next/cache.
 echo "[2/5] Running npm ci + build in staging..."
 ssh "${SSH_OPTS[@]}" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}" \
-  "cd '${WEB_DEPLOY_STAGING}' && \
+  "cd '${WEB_DEPLOY_STAGING}' && umask 0002 && \
    npm ci && \
    NEXT_PUBLIC_APK_URL='${NEXT_PUBLIC_APK_URL}' \
    NEXT_PUBLIC_API_BASE_URL='${NEXT_PUBLIC_API_BASE_URL}' \
@@ -94,12 +96,14 @@ ssh "${SSH_OPTS[@]}" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}" \
 # touched by a failed build.
 echo "[3/5] Promoting staging tree to live ${WEB_DEPLOY_PATH} on the VPS..."
 ssh "${SSH_OPTS[@]}" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}" \
-  "rsync -a --delete --exclude '.env*' '${WEB_DEPLOY_STAGING}/' '${WEB_DEPLOY_PATH}/'"
+  "rsync -a --delete --exclude '.env*' '${WEB_DEPLOY_STAGING}/' '${WEB_DEPLOY_PATH}/' && \
+   chmod -R 'g+rwX' '${WEB_DEPLOY_PATH}' '${WEB_DEPLOY_STAGING}'"
 
 # --- 4. Restart service (aborts above if build failed) ---
 echo "[4/5] Restarting cinedrama-web..."
 ssh "${SSH_OPTS[@]}" "${WEB_DEPLOY_USER}@${WEB_DEPLOY_HOST}" \
-  "sudo systemctl restart cinedrama-web && systemctl is-active cinedrama-web"
+  "sudo systemctl reset-failed cinedrama-web || true; \
+   sudo systemctl restart cinedrama-web && systemctl is-active cinedrama-web"
 
 # --- 5. Smoke test ---
 echo "[5/5] Smoke test..."
