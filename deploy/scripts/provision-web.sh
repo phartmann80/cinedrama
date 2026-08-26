@@ -99,9 +99,9 @@ chmod -R "g+rwX" "${APP_PATH}" "${APP_STAGING}"
 # setgid on directories: new files/dirs inherit the cinedramadeploy group.
 find "${APP_PATH}" "${APP_STAGING}" -type d -exec chmod g+s {} \;
 
-# --- 4. APK download directory ---
-echo "[4/8] Creating /opt/cinedrama/downloads (readable by nginx)..."
-mkdir -p /opt/cinedrama/downloads
+# --- 4. APK download + previews directories ---
+echo "[4/8] Creating /opt/cinedrama/downloads and previews (readable by nginx)..."
+mkdir -p /opt/cinedrama/downloads /opt/cinedrama/downloads/previews
 chown -R cinedrama:cinedrama /opt/cinedrama/downloads
 find /opt/cinedrama/downloads -type d -exec chmod 755 {} \;
 

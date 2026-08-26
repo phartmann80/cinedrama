@@ -195,6 +195,23 @@ sudo SMOKE_PUBLIC=1 bash deploy/scripts/deploy-web-local.sh
 
 ---
 
+## 4b. Preview teasers (optional but part of this feature) — run as root
+
+Generate the 4 placeholder preview clips into `/opt/cinedrama/downloads/previews/`:
+
+```bash
+sudo apt-get install -y ffmpeg
+cd /opt/cinedrama/source
+sudo bash deploy/scripts/make-preview-teasers.sh
+```
+
+It writes `<slug>.mp4` (6s, 480x640, muted, H.264, ~≤1.5MB each) served at
+`/download/previews/<slug>.mp4`. The landing page loads them lazily on hover
+/ first tap, so no cache-bust is needed. Later, real trailers replace the same
+file paths — zero code change.
+
+---
+
 ## 5. Smoke-test checklist — run and paste back
 
 Run these **after** the service is up. Local checks work immediately; public
@@ -205,11 +222,12 @@ checks only become meaningful once DNS is flipped to `31.70.107.44`.
 bash /opt/cinedrama/source/deploy/scripts/smoke-test-web.sh http://127.0.0.1:3000
 
 # Public (after DNS flip + certbot)
-curl -s -o /dev/null -w "GET /              → %{http_code}\n" https://cinedrama.app/
-curl -s -o /dev/null -w "GET /privacy       → %{http_code}\n" https://cinedrama.app/privacy
-curl -s -o /dev/null -w "GET /terms         → %{http_code}\n" https://cinedrama.app/terms
-curl -s -o /dev/null -w "GET /api/healthz   → %{http_code}\n" https://cinedrama.app/api/healthz
-curl -s -o /dev/null -w "GET /download/...  → %{http_code}\n" https://cinedrama.app/download/cinedrama-latest.apk
+curl -s -o /dev/null -w "GET /                            → %{http_code}\n" https://cinedrama.app/
+curl -s -o /dev/null -w "GET /privacy                     → %{http_code}\n" https://cinedrama.app/privacy
+curl -s -o /dev/null -w "GET /terms                       → %{http_code}\n" https://cinedrama.app/terms
+curl -s -o /dev/null -w "GET /api/healthz                 → %{http_code}\n" https://cinedrama.app/api/healthz
+curl -s -o /dev/null -w "GET /download/...                → %{http_code}\n" https://cinedrama.app/download/cinedrama-latest.apk
+curl -s -o /dev/null -w "GET /download/previews/...       → %{http_code}  %{content_type}\n" https://cinedrama.app/download/previews/billionaire-s-revenge.mp4
 ```
 
 **Pass criteria:**
@@ -218,6 +236,8 @@ curl -s -o /dev/null -w "GET /download/...  → %{http_code}\n" https://cinedram
 - `/terms` → 200
 - `/api/healthz` → 200 (if the API is deployed; otherwise report 502/504 — the
   web service itself is fine if `/`, `/privacy`, `/terms` are 200)
+- `/download/previews/billionaire-s-revenge.mp4` → **200** with
+  `Content-Type: video/mp4` (requires step 4b; 404 means teasers not generated yet)
 - `/download/cinedrama-latest.apk` → 200 (APK uploaded) **or** 404 (APK not
   uploaded yet — expected; not a deploys failure)
 
